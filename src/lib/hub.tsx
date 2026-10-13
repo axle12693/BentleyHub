@@ -275,7 +275,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
   if (phase === 'upcoming' && startsAt)
     return (
       <Splash>
-        <p>Your pet-sitting access hasn’t started yet.</p>
+        <p>Your pet-sitting access hasnâ€™t started yet.</p>
         <p className="muted">It begins {fmtDateTime(startsAt)}. This page will open on its own then.</p>
         <button className="btn ghost" onClick={signOut}>Sign out</button>
       </Splash>
