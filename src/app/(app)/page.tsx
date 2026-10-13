@@ -16,7 +16,7 @@ export default function Home() {
 function FamilyHome() {
   const { me, household, members, events, rewards, balances, redemptions, isAdult } = useHub();
   const t = today();
-  const { rows, loading } = useOccurrences(addDays(t, -7), t);
+  const { rows, loading } = useOccurrences(addDays(t, -30), t);
 
   const { overdue, morning, evening, other, done } = useMemo(() => {
     const todays = rows.filter((r) => r.due_date === t);

@@ -74,7 +74,7 @@ export default function RewardsPage() {
           return (
             <div key={g.id} style={{ marginTop: 12 }}>
               <div className="spread">
-                <span className="reward"><span className="big-emoji">🍿</span><b>{g.title}</b></span>
+                <span className="reward"><span className="big-emoji">🎉</span><b>{g.title}</b></span>
                 <span className="small">{Math.min(balances.family, g.cost)} / {g.cost}</span>
               </div>
               <div className="progress" style={{ margin: '6px 0' }}><i style={{ width: `${pct}%` }} /></div>

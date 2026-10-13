@@ -41,7 +41,7 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (recType === 'weekdays' && days.length === 0) return setError('Pick at least one day.');
-    if (end && end < start) return setError('The end date is before the start date.');
+    if (recType !== 'once' && end && end < start) return setError('The end date is before the start date.');
     const row = {
       title: title.trim(),
       category: category.trim() || 'Chores',
@@ -54,7 +54,7 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
       due_time: dueTime || null,
       recurrence: recurrence(),
       start_date: start,
-      end_date: end || null,
+      end_date: recType === 'once' ? null : end || null,
       guest_visible: guest,
     };
     const ok = await run(async () => {

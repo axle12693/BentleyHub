@@ -72,5 +72,5 @@ export const listPetNotes = (household: string) =>
 export const addPetNote = (household: string, pet: string, author: string, body: string) =>
   must(supabase().from('pet_notes').insert({ household_id: household, pet_id: pet, author_member_id: author, body }));
 
-export type MembershipRow = { household_id: string; household_name: string; role: string; active: boolean };
+export type MembershipRow = { household_id: string; household_name: string; role: string; active: boolean; starts_at: string | null };
 export const myMemberships = () => rpc<MembershipRow[]>('my_memberships');

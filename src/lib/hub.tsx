@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Splash, SetupNeeded } from '@/components/Splash';
 import { errMsg, must, myMemberships } from './api';
+import { fmtDateTime } from './dates';
 import { getActiveHousehold, loginUrl, setActiveHousehold, useSignOut } from './auth';
 import { isConfigured, supabase } from './supabase';
 import type { CalEvent, Household, LedgerRow, Member, Pet, Redemption, Reward, Task } from './types';
@@ -55,7 +56,11 @@ async function loadHousehold(hid: string, uid: string): Promise<HubData> {
     must<Task[]>(sb.from('tasks').select('*').eq('household_id', hid).eq('archived', false).order('created_at')),
     must<Reward[]>(sb.from('rewards').select('*').eq('household_id', hid).eq('active', true).order('cost')),
     must<CalEvent[]>(sb.from('events').select('*').eq('household_id', hid).gte('starts_at', new Date(Date.now() - 45 * 864e5).toISOString()).order('starts_at')),
-    must<Redemption[]>(sb.from('redemptions').select('*').eq('household_id', hid).order('created_at', { ascending: false }).limit(50)),
+    // Pending requests are always loaded in full; only the decided history is capped.
+    Promise.all([
+      must<Redemption[]>(sb.from('redemptions').select('*').eq('household_id', hid).eq('status', 'pending').order('created_at', { ascending: false })),
+      must<Redemption[]>(sb.from('redemptions').select('*').eq('household_id', hid).neq('status', 'pending').order('created_at', { ascending: false }).limit(50)),
+    ]).then(([p, d]) => [...p, ...d]),
     must<LedgerRow[]>(sb.from('points_ledger').select('id,scope,member_id,delta,kind,note,created_at').eq('household_id', hid).order('created_at', { ascending: false }).limit(60)),
     must<{ scope: string; member_id: string | null; balance: number }[]>(sb.from('point_balances').select('scope,member_id,balance').eq('household_id', hid)),
   ]);
@@ -81,11 +86,12 @@ export function HubProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const signOut = useSignOut();
-  const [phase, setPhase] = useState<'loading' | 'ready' | 'error' | 'ended'>('loading');
+  const [phase, setPhase] = useState<'loading' | 'ready' | 'error' | 'ended' | 'upcoming'>('loading');
   const [error, setError] = useState('');
   const [userId, setUserId] = useState('');
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [startsAt, setStartsAt] = useState<string | null>(null);
   const [data, setData] = useState<HubData | null>(null);
   const [rev, setRev] = useState(0);
   const activeRef = useRef<string | null>(null);
@@ -118,6 +124,13 @@ export function HubProvider({ children }: { children: ReactNode }) {
         .filter((r) => r.active)
         .map((r) => ({ household_id: r.household_id, role: r.role as Member['role'], name: r.household_name }));
       if (ms.length === 0) {
+        // A sitter whose window hasn't opened yet is waiting, not locked out.
+        const soonest = rows.map((r) => r.starts_at).filter((x): x is string => !!x).sort()[0];
+        if (soonest) {
+          setStartsAt(soonest);
+          setPhase('upcoming');
+          return;
+        }
         // Had a household, but a sitter window ended or access was revoked.
         setPhase('ended');
         return;
@@ -194,6 +207,14 @@ export function HubProvider({ children }: { children: ReactNode }) {
     };
   }, [phase, activeId, userId, handleLoadFailure, pull]);
 
+  // Waiting for a sitter window to open: boot again at that moment.
+  useEffect(() => {
+    if (phase !== 'upcoming' || !startsAt) return;
+    const wait = new Date(startsAt).getTime() - Date.now();
+    const timer = setTimeout(() => window.location.reload(), Math.max(1000, Math.min(wait, 2 ** 31 - 1)));
+    return () => clearTimeout(timer);
+  }, [phase, startsAt]);
+
   // A sitter's access ends at a set time: cut the session off then, instead of waiting for the next sync.
   const sitterEnd = data?.me.role === 'sitter' ? data.me.sitter_end : null;
   useEffect(() => {
@@ -249,6 +270,14 @@ export function HubProvider({ children }: { children: ReactNode }) {
       <Splash>
         <p>{error}</p>
         <button className="btn" onClick={signOut}>Sign out</button>
+      </Splash>
+    );
+  if (phase === 'upcoming' && startsAt)
+    return (
+      <Splash>
+        <p>Your pet-sitting access hasn’t started yet.</p>
+        <p className="muted">It begins {fmtDateTime(startsAt)}. This page will open on its own then.</p>
+        <button className="btn ghost" onClick={signOut}>Sign out</button>
       </Splash>
     );
   if (phase === 'ended')
