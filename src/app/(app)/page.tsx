@@ -29,13 +29,17 @@ function FamilyHome() {
     };
   }, [rows, t]);
 
-  // A task missed on several days shows once (latest miss) with a count, not as identical rows.
+  // "Do it once" tasks missed on several days show once (latest miss) with a count, since one
+  // completion settles them all. "Each one counts" tasks keep a row per missed day.
   const overdueGroups = useMemo(() => {
-    const g = new Map<string, typeof overdue>();
-    for (const o of overdue) g.set(o.task_id, [...(g.get(o.task_id) ?? []), o]);
-    return [...g.values()]
-      .map((list) => ({ occ: list[list.length - 1], missed: list.length - 1 }))
-      .sort((a, b) => a.occ.due_date.localeCompare(b.occ.due_date) || byOccTime(a.occ, b.occ));
+    const catchUp = new Map<string, typeof overdue>();
+    const groups: { occ: (typeof overdue)[number]; missed: number }[] = [];
+    for (const o of overdue) {
+      if (o.task.overdue_mode === 'catch_up') catchUp.set(o.task_id, [...(catchUp.get(o.task_id) ?? []), o]);
+      else groups.push({ occ: o, missed: 0 });
+    }
+    for (const list of catchUp.values()) groups.push({ occ: list[list.length - 1], missed: list.length - 1 });
+    return groups.sort((a, b) => a.occ.due_date.localeCompare(b.occ.due_date) || byOccTime(a.occ, b.occ));
   }, [overdue]);
 
   const todays = rows.filter((r) => r.due_date === t);

@@ -210,7 +210,7 @@ describe('points: once only, to the right person', () => {
   it('an open chore pays whoever completes it, exactly once', async () => {
     const occ = await occFor(tOpen);
     const r = await as(U.bob, `select complete_occurrence($1) as r`, [occ]);
-    expect(r[0].r).toEqual({ points: 10, family_bonus: 2 });
+    expect(r[0].r).toEqual({ points: 10, family_bonus: 2, covered: 0 });
     await fails(U.alice, `select complete_occurrence($1)`, [occ]); // lost the race
     await fails(U.bob, `select complete_occurrence($1)`, [occ]); // double-tap
     expect(await balance(mBob)).toBe(10);
@@ -407,3 +407,39 @@ describe('progression fixes (migration 0004)', () => {
     expect((await admin(`select count(*)::int c from tasks where household_id=$1 and title='Scoop litter boxes' and not archived`, [B]))[0].c).toBe(1);
   });
 });
+
+describe('overdue handling (migration 0006)', () => {
+  const past = (id: string) =>
+    as(U.alice, `select ensure_occurrences($1, current_date - 3, current_date)`, [A]).then(() =>
+      admin<{ id: string; due_date: string; status: string }>(`select id, due_date, status from occurrences where task_id=$1 order by due_date`, [id]));
+
+  it("'each' keeps every missed day open, and each one earns points", async () => {
+    const t = await newTask(U.alice, 'Each mode');
+    await admin(`update tasks set start_date = current_date - 3 where id=$1`, [t]);
+    const occs = await past(t);
+    expect(occs).toHaveLength(4);
+    const before = await balance(mAlice);
+    await as(U.alice, `select complete_occurrence($1)`, [occs[3].id]);
+    await as(U.alice, `select complete_occurrence($1)`, [occs[2].id]);
+    expect((await admin(`select status from occurrences where task_id=$1 order by due_date`, [t])).map((r: any) => r.status))
+      .toEqual(['pending', 'pending', 'done', 'done']);
+    expect(await balance(mAlice)).toBe(before + 20);
+  });
+
+  it("'catch_up' settles earlier missed days with one completion, paying once; undo restores them", async () => {
+    const t = await newTask(U.alice, 'Catch up mode', ', overdue_mode', `, 'catch_up'`);
+    await admin(`update tasks set start_date = current_date - 3 where id=$1`, [t]);
+    const occs = await past(t);
+    const before = await balance(mAlice);
+    const r = await as(U.alice, `select complete_occurrence($1) as r`, [occs[2].id]); // completes day -1
+    expect(r[0].r).toMatchObject({ points: 10, covered: 2 });
+    const statuses = async () => (await admin(`select status from occurrences where task_id=$1 order by due_date`, [t])).map((x: any) => x.status);
+    expect(await statuses()).toEqual(['covered', 'covered', 'done', 'pending']); // today stays open
+    expect(await balance(mAlice)).toBe(before + 10);
+    await fails(U.alice, `select complete_occurrence($1)`, [occs[0].id]); // already caught up
+    await as(U.alice, `select uncomplete_occurrence($1)`, [occs[2].id]);
+    expect(await statuses()).toEqual(['pending', 'pending', 'pending', 'pending']);
+    expect(await balance(mAlice)).toBe(before);
+  });
+});
+

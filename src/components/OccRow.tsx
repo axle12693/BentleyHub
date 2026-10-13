@@ -19,22 +19,23 @@ export function OccRow({ occ, showDate, missed = 0 }: { occ: OccWithTask; showDa
   useEffect(() => setExpect(null), [occ.status, occ.completed_at]);
   const done = (expect ?? occ.status) === 'done';
   const serverDone = occ.status === 'done';
+  const covered = occ.status === 'covered';
   const assignee = memberById(t.assignee_member_id);
   const pet = pets.find((p) => p.id === t.pet_id);
   const completer = memberById(occ.completed_by);
-  const overdue = !done && (occ.due_date < today() || (occ.due_date === today() && !!t.due_time && t.due_time.slice(0, 5) < hhmm(new Date())));
+  const overdue = !done && !covered && (occ.due_date < today() || (occ.due_date === today() && !!t.due_time && t.due_time.slice(0, 5) < hhmm(new Date())));
   const lockedForMe = me.role === 'child' && !!t.assignee_member_id && t.assignee_member_id !== me.id;
-  const canToggle = !busy && (done ? isAdult : !lockedForMe);
+  const canToggle = !busy && !covered && (done ? isAdult : !lockedForMe);
 
   async function complete(withNote?: string) {
     setBusy(true);
     const ok = await attempt(async () => {
-      const r = await rpc<{ points: number; family_bonus: number }>('complete_occurrence', {
+      const r = await rpc<{ points: number; family_bonus: number; covered: number }>('complete_occurrence', {
         p_occurrence: occ.id,
         p_note: withNote ?? null,
       });
       setExpect('done');
-      toast(r.points > 0 ? `+${r.points} points! 🎉` : 'Done ✓');
+      toast(r.points > 0 ? `+${r.points} points! 🎉` : r.covered > 0 ? `Done ✓ · caught up ${r.covered} missed` : 'Done ✓');
     });
     await reload(); // refresh either way (e.g. someone else got there first)
     setBusy(false);
@@ -52,7 +53,7 @@ export function OccRow({ occ, showDate, missed = 0 }: { occ: OccWithTask; showDa
 
   return (
     <>
-      <div className={`task ${done ? 'done' : ''} ${overdue ? 'overdue' : ''}`}>
+      <div className={`task ${done || covered ? 'done' : ''} ${overdue ? 'overdue' : ''}`}>
         <button
           className={`check ${done ? 'on' : ''}`}
           disabled={!canToggle}
@@ -65,7 +66,7 @@ export function OccRow({ occ, showDate, missed = 0 }: { occ: OccWithTask; showDa
           <div className="task-title">{t.title}</div>
           <div className="task-meta">
             {showDate && <span>{fmtDate(occ.due_date, { weekday: 'short', month: 'short', day: 'numeric' })}</span>}
-            {missed > 0 && <span className="pill gray">+{missed} earlier missed</span>}
+            {missed > 0 && <span className="pill gray">+{missed} earlier missed · one check catches up</span>}
             {t.due_time && <span>🕒 {fmtTime(t.due_time)}</span>}
             {pet && <span>🐾 {pet.name}</span>}
             {!isSitter && (
@@ -74,6 +75,7 @@ export function OccRow({ occ, showDate, missed = 0 }: { occ: OccWithTask; showDa
               </span>
             )}
             {overdue && <span className="pill red">Overdue</span>}
+            {covered && <span className="pill gray">Caught up</span>}
             {serverDone && completer && (
               <span>
                 ✓ {completer.display_name}
@@ -85,7 +87,7 @@ export function OccRow({ occ, showDate, missed = 0 }: { occ: OccWithTask; showDa
           {serverDone && occ.note && <div className="task-meta">📝 {occ.note}</div>}
         </div>
         {!isSitter && t.points > 0 && t.points_eligible && <span className="pill">+{t.points}</span>}
-        {!done && (t.guest_visible || isSitter) && (
+        {!done && !covered && (t.guest_visible || isSitter) && (
           <button className="btn small ghost" disabled={busy} onClick={() => setNoteOpen(true)} aria-label="Complete with a note">
             📝
           </button>

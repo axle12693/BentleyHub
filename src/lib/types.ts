@@ -46,6 +46,8 @@ export type Task = {
   instructions: string;
   due_time: string | null;
   recurrence: Recurrence;
+  /** When occurrences are missed: 'each' = every one must be done; 'catch_up' = one completion settles them all. */
+  overdue_mode: 'each' | 'catch_up';
   start_date: string;
   end_date: string | null;
   guest_visible: boolean;
@@ -57,7 +59,7 @@ export type Occurrence = {
   household_id: string;
   task_id: string;
   due_date: string;
-  status: 'pending' | 'done';
+  status: 'pending' | 'done' | 'covered';
   completed_by: string | null;
   completed_at: string | null;
   note: string | null;

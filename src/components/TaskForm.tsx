@@ -27,6 +27,7 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
   const [recType, setRecType] = useState<RecType>(r?.type ?? 'daily');
   const [days, setDays] = useState<number[]>(r?.type === 'weekdays' ? r.days : [1, 2, 3, 4, 5]);
   const [every, setEvery] = useState(String(r?.type === 'interval' ? r.every : 2));
+  const [overdueMode, setOverdueMode] = useState<Task['overdue_mode']>(task?.overdue_mode ?? 'each');
   const [start, setStart] = useState(task?.start_date ?? today());
   const [end, setEnd] = useState(task?.end_date ?? '');
   const [guest, setGuest] = useState(task?.guest_visible ?? !!presetPetId);
@@ -53,6 +54,7 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
       instructions: instructions.trim(),
       due_time: dueTime || null,
       recurrence: recurrence(),
+      overdue_mode: recType === 'once' ? 'each' : overdueMode,
       start_date: start,
       end_date: recType === 'once' ? null : end || null,
       guest_visible: guest,
@@ -122,6 +124,22 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
             <input style={{ width: 80 }} type="number" min={1} max={365} value={every} onChange={(e) => setEvery(e.target.value)} />
             <span>days</span>
           </div>
+        )}
+
+        {recType !== 'once' && (
+          <>
+            <label>If it gets missed</label>
+            <SegControl
+              value={overdueMode}
+              onChange={setOverdueMode}
+              options={[['each', 'Each one counts'], ['catch_up', 'Do it once']]}
+            />
+            <div className="muted small" style={{ marginTop: 6 }}>
+              {overdueMode === 'each'
+                ? 'Every missed day stays on the list. Each one must be done and earns points.'
+                : 'Doing it once catches up all the missed days. Only that one earns points.'}
+            </div>
+          </>
         )}
 
         <div className="two">
