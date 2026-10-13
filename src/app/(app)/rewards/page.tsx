@@ -69,7 +69,8 @@ export default function RewardsPage() {
         {goal.length === 0 && <p className="muted small">No family rewards yet{isAdult ? ' — add one below.' : '.'}</p>}
         {goal.map((g) => {
           const pct = Math.min(100, (balances.family / g.cost) * 100);
-          const can = balances.family - held(null) >= g.cost;
+          const avail = balances.family - held(null);
+          const can = avail >= g.cost;
           return (
             <div key={g.id} style={{ marginTop: 12 }}>
               <div className="spread">
@@ -79,7 +80,7 @@ export default function RewardsPage() {
               <div className="progress" style={{ margin: '6px 0' }}><i style={{ width: `${pct}%` }} /></div>
               <div className="row">
                 <button className="btn small primary" disabled={!can || busy === g.id} onClick={() => redeem(g)}>
-                  {can ? 'Redeem together' : `${Math.max(0, g.cost - balances.family)} more to go`}
+                  {can ? 'Redeem together' : `${g.cost - avail} more to go`}
                 </button>
                 {isAdult && <button className="btn small ghost" onClick={() => setEditing(g)}>Edit</button>}
               </div>
@@ -120,7 +121,8 @@ export default function RewardsPage() {
         <div className="card empty">No personal rewards yet.{isAdult && ' Add things like “Choose dinner” or “30 min of screen time”.'}</div>
       )}
       {rewards.filter((r) => r.kind === 'individual').map((r) => {
-        const can = myPoints - held(me.id) >= r.cost;
+        const avail = myPoints - held(me.id);
+        const can = avail >= r.cost;
         return (
           <div className="card flat" key={r.id} style={{ marginBottom: 8 }}>
             <div className="spread">
@@ -128,7 +130,7 @@ export default function RewardsPage() {
               <div className="row">
                 {isAdult && <button className="btn small ghost" onClick={() => setEditing(r)}>Edit</button>}
                 <button className="btn small primary" disabled={!can || busy === r.id} onClick={() => redeem(r)}>
-                  {can ? 'Redeem' : `Need ${r.cost - myPoints}`}
+                  {can ? 'Redeem' : `Need ${r.cost - avail}`}
                 </button>
               </div>
             </div>

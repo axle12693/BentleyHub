@@ -1,9 +1,11 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { supabase } from '@/lib/supabase';
+import { must } from '@/lib/api';
 import { EventForm } from '@/components/EventForm';
 import { OccRow } from '@/components/OccRow';
-import { addDays, DAY_NAMES, fmtDate, fmtDateTime, iso, parseISO, startOfMonthGrid, today } from '@/lib/dates';
+import { addDays, DAY_NAMES, fmtDate, fmtDateTime, iso, localToTs, parseISO, startOfMonthGrid, today } from '@/lib/dates';
 import { useBlockSitter } from '@/lib/guards';
 import { useHub } from '@/lib/hub';
 import { byOccTime, useOccurrences } from '@/lib/occurrences';
@@ -13,7 +15,8 @@ const eventDay = (e: CalEvent) => iso(new Date(e.starts_at));
 
 export default function CalendarPage() {
   const blocked = useBlockSitter();
-  const { events, isAdult } = useHub();
+  const { household, isAdult, rev } = useHub();
+  const [events, setEvents] = useState<CalEvent[]>([]);
   const [selected, setSelected] = useState(today());
   const [month, setMonth] = useState(() => {
     const d = new Date();
@@ -23,7 +26,17 @@ export default function CalendarPage() {
 
   const gridStart = startOfMonthGrid(month);
   const gridEnd = addDays(gridStart, 41);
-  const { rows } = useOccurrences(gridStart, gridEnd);
+  const { rows, loading } = useOccurrences(gridStart, gridEnd);
+
+  // The hub only keeps recent events; the calendar loads whatever month is on screen.
+  useEffect(() => {
+    let live = true;
+    must<CalEvent[]>(
+      supabase().from('events').select('*').eq('household_id', household.id)
+        .gte('starts_at', localToTs(gridStart)).lt('starts_at', localToTs(addDays(gridEnd, 1))).order('starts_at'),
+    ).then((rows) => live && setEvents(rows ?? [])).catch(() => { /* keep what we have */ });
+    return () => { live = false; };
+  }, [household.id, gridStart, gridEnd, rev]);
   const cells = useMemo(() => Array.from({ length: 42 }, (_, i) => addDays(gridStart, i)), [gridStart]);
   const monthNum = parseISO(month).getMonth();
 
@@ -43,7 +56,10 @@ export default function CalendarPage() {
 
   const shift = (n: number) => {
     const d = parseISO(month);
-    setMonth(iso(new Date(d.getFullYear(), d.getMonth() + n, 1)));
+    const first = new Date(d.getFullYear(), d.getMonth() + n, 1);
+    setMonth(iso(first));
+    const now = new Date();
+    setSelected(first.getFullYear() === now.getFullYear() && first.getMonth() === now.getMonth() ? today() : iso(first));
   };
 
   if (blocked) return null;
@@ -97,7 +113,9 @@ export default function CalendarPage() {
         </div>
       ))}
       {dayOccs.map((o) => <OccRow key={o.id} occ={o} />)}
-      {dayEvents.length === 0 && dayOccs.length === 0 && <div className="card empty">Nothing planned for this day.</div>}
+      {dayEvents.length === 0 && dayOccs.length === 0 && (
+        <div className="card empty">{loading ? 'Loading…' : 'Nothing planned for this day.'}</div>
+      )}
 
       {editing && (
         <EventForm event={editing === 'new' ? undefined : editing} date={selected} onClose={() => setEditing(null)} />

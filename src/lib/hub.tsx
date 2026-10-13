@@ -89,6 +89,16 @@ export function HubProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<HubData | null>(null);
   const [rev, setRev] = useState(0);
   const activeRef = useRef<string | null>(null);
+  const loadSeq = useRef(0);
+
+  // Only the most recently started load may apply, so a slow stale response can't overwrite fresh data.
+  const pull = useCallback(async (hid: string, uid: string) => {
+    const seq = ++loadSeq.current;
+    const fresh = await loadHousehold(hid, uid);
+    if (seq !== loadSeq.current) return;
+    setData(fresh);
+    setRev((r) => r + 1);
+  }, []);
 
   const boot = useCallback(async () => {
     try {
@@ -163,8 +173,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
       timer = setTimeout(async () => {
         if (activeRef.current !== activeId) return;
         try {
-          setData(await loadHousehold(activeId, userId));
-          setRev((r) => r + 1);
+          await pull(activeId, userId);
         } catch (e) {
           await handleLoadFailure(e);
         }
@@ -183,7 +192,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', onVisible);
       sb.removeChannel(ch);
     };
-  }, [phase, activeId, userId, handleLoadFailure]);
+  }, [phase, activeId, userId, handleLoadFailure, pull]);
 
   // A sitter's access ends at a set time: cut the session off then, instead of waiting for the next sync.
   const sitterEnd = data?.me.role === 'sitter' ? data.me.sitter_end : null;
@@ -202,9 +211,23 @@ export function HubProvider({ children }: { children: ReactNode }) {
 
   const reload = useCallback(async () => {
     if (!activeRef.current || !userId) return;
-    setData(await loadHousehold(activeRef.current, userId));
-    setRev((r) => r + 1);
-  }, [userId]);
+    await pull(activeRef.current, userId);
+  }, [userId, pull]);
+
+  // Re-render at local midnight so "today" (and what counts as overdue) rolls over in a long-open tab.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const arm = () => {
+      const now = new Date();
+      const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1);
+      timer = setTimeout(() => {
+        setRev((r) => r + 1);
+        arm();
+      }, next.getTime() - now.getTime());
+    };
+    arm();
+    return () => clearTimeout(timer);
+  }, []);
 
   const switchHousehold = useCallback((id: string) => {
     setActiveHousehold(id);

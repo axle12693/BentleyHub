@@ -377,3 +377,33 @@ describe('audit fixes (migration 0003)', () => {
     await as(U.bob, `select update_member($1,'Bob','#aabbcc')`, [mBob]);
   });
 });
+
+describe('progression fixes (migration 0004)', () => {
+  it('removing a member opens up the tasks assigned to them', async () => {
+    const kid2 = (await as(U.alice, `select add_child_profile($1,'Temp Kid') as id`, [A]))[0].id;
+    const t = await newTask(U.alice, 'Temp kid chore', ', assignee_member_id', ', $3', [kid2]);
+    await as(U.alice, `select revoke_member($1)`, [kid2]);
+    expect((await admin(`select assignee_member_id from tasks where id=$1`, [t]))[0].assignee_member_id).toBeNull();
+  });
+
+  it('a schedule change drops older pending occurrences that no longer match', async () => {
+    const t = await newTask(U.alice, 'Sched change');
+    await as(U.alice, `select ensure_occurrences($1, current_date - 5, current_date)`, [A]);
+    await admin(`update tasks set start_date = current_date - 5 where id=$1`, [t]); // purge + regen below
+    await as(U.alice, `select ensure_occurrences($1, current_date - 5, current_date)`, [A]);
+    expect((await admin(`select count(*)::int c from occurrences where task_id=$1`, [t]))[0].c).toBe(6);
+    await admin(`update tasks set start_date = current_date where id=$1`, [t]);
+    const left = await admin<{ due_date: string }>(`select due_date from occurrences where task_id=$1`, [t]);
+    expect(left.length).toBeLessThanOrEqual(1);
+  });
+
+  it('starter pets can be added again after every pet was archived', async () => {
+    await admin(`update pets set archived = true where household_id=$1`, [B]);
+    await as(U.eve, `select seed_starter_pets($1)`, [B]);
+    await fails(U.eve, `select seed_starter_pets($1)`, [B]);
+    await admin(`update pets set archived = true where household_id=$1`, [B]);
+    await as(U.eve, `select seed_starter_pets($1)`, [B]);
+    expect((await admin(`select count(*)::int c from pets where household_id=$1 and not archived`, [B]))[0].c).toBe(6);
+    expect((await admin(`select count(*)::int c from tasks where household_id=$1 and title='Scoop litter boxes' and not archived`, [B]))[0].c).toBe(1);
+  });
+});

@@ -29,6 +29,15 @@ function FamilyHome() {
     };
   }, [rows, t]);
 
+  // A task missed on several days shows once (latest miss) with a count, not as identical rows.
+  const overdueGroups = useMemo(() => {
+    const g = new Map<string, typeof overdue>();
+    for (const o of overdue) g.set(o.task_id, [...(g.get(o.task_id) ?? []), o]);
+    return [...g.values()]
+      .map((list) => ({ occ: list[list.length - 1], missed: list.length - 1 }))
+      .sort((a, b) => a.occ.due_date.localeCompare(b.occ.due_date) || byOccTime(a.occ, b.occ));
+  }, [overdue]);
+
   const todays = rows.filter((r) => r.due_date === t);
   const left = todays.filter((r) => r.status === 'pending').length;
   const petDue = todays.filter((r) => r.status === 'pending' && r.task.pet_id).length;
@@ -73,21 +82,21 @@ function FamilyHome() {
         </>
       )}
 
-      {overdue.length > 0 && (
+      {overdueGroups.length > 0 && (
         <>
           <div className="section-title"><h2>⚠️ Still to do from earlier</h2></div>
-          {overdue.map((o) => <OccRow key={o.id} occ={o} showDate />)}
+          {overdueGroups.map(({ occ, missed }) => <OccRow key={occ.id} occ={occ} showDate missed={missed} />)}
         </>
       )}
 
-      {morning.length > 0 && (<><div className="section-title"><h2>🌅 Morning routine</h2></div>{morning.map((o) => <OccRow key={o.id} occ={o} />)}</>)}
       <div className="section-title">
         <h2>Today’s tasks</h2>
         <Link href="/tasks">Manage</Link>
       </div>
+      {morning.length > 0 && (<><div className="section-title"><h2>🌅 Morning routine</h2></div>{morning.map((o) => <OccRow key={o.id} occ={o} />)}</>)}
       {!loading && other.length === 0 && morning.length + evening.length === 0 && done.length === 0 && (
         <div className="card empty">
-          Nothing scheduled today. {isAdult ? <><Link href="/tasks">Add a task</Link> or <Link href="/pets">set up your pets</Link>.</> : 'Enjoy the day!'}
+          {overdue.length > 0 ? 'Nothing else scheduled today.' : 'Nothing scheduled today.'} {isAdult ? <><Link href="/tasks">Add a task</Link> or <Link href="/pets">set up your pets</Link>.</> : 'Enjoy the day!'}
         </div>
       )}
       {other.map((o) => <OccRow key={o.id} occ={o} />)}
