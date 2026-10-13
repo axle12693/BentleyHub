@@ -58,7 +58,7 @@ export function SetupNeeded() {
     <Splash>
       <p>This site isn’t connected to a database yet.</p>
       <p className="muted">
-        Add <code>NEXT_PUBLIC_SUPABASE_URL</code> and <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> to your environment,
+        Add <code>NEXT_PUBLIC_SUPABASE_URL</code> and <code>NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code> to your environment,
         then reload. See the README for the 5-minute Supabase setup.
       </p>
     </Splash>

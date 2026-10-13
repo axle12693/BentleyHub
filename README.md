@@ -23,9 +23,10 @@ Stack: **Next.js 15 + TypeScript** (UI) · **Supabase** (auth, Postgres, row-lev
 * Every table has row-level security; reads are scoped to your household.
 * Members, points, occurrences, redemptions and household settings **cannot be written directly** by the app — only via `SECURITY DEFINER` functions that identify you with `auth.uid()` and ignore any client-supplied user id, role, or point value.
 * A sitter's access is checked in SQL against `sitter_start`/`sitter_end`/`revoked_at` on every request.
-* Only the public **anon** key is used in the browser. **Never** put the `service_role` key in this app.
+* Only the **publishable** key (`sb_publishable_…`) is used in the browser. **Never** put a **secret** key (`sb_secret_…`) or a legacy `service_role` key in this app — this app doesn't need one at all.
+* Migration `0002` states the exact table grants (the signed-in role can read most tables and only call the checked functions for writes; the signed-out role gets nothing), so it works whether your project auto-grants new tables or not.
 
-`npm test` runs 26 tests that apply the real migration to an in-process Postgres and attack it:
+`npm test` runs 26 tests that apply every migration in order to an in-process Postgres and attack it:
 cross-household reads/writes, expired / not-yet-started / revoked sitters, duplicate and concurrent completions,
 direct point inserts, role escalation, invite replay, reward overspending, and more.
 
@@ -38,25 +39,43 @@ direct point inserts, role escalation, invite replay, reward overspending, and m
 ### 1. Create the database
 1. Go to <https://supabase.com> → **New project** (any name, pick a region near you, save the DB password somewhere).
 2. In the project: **SQL Editor → New query**, paste the whole of
-   [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql), click **Run**. It should finish with "Success".
+   [`0001_init.sql`](supabase/migrations/0001_init.sql), click **Run**, then do the same with
+   [`0002_explicit_grants.sql`](supabase/migrations/0002_explicit_grants.sql). Each should finish with "Success".
+   Run them in order; run only the ones you haven't applied yet (0002 is safe to re-run).
 3. **Authentication → Providers → Email**: keep it enabled. (While testing you can turn **Confirm email** off so sign-up logs you straight in; turn it back on for production.)
 4. **Authentication → URL Configuration**: set **Site URL** to your deployed address once you have one (and add `http://localhost:3000` for local testing). Invite/password-reset emails use this.
-5. **Project Settings → API**: copy the **Project URL** and the **anon public** key.
+5. Click **Connect** at the top of the dashboard (or open **Settings → API Keys**) and copy the **Project URL** and the **publishable key** (starts with `sb_publishable_`). Keep them handy — you'll paste them in step 2 below. Don't use the legacy `anon` / `service_role` JWTs (long strings starting `eyJ`) — Supabase is deprecating them by the end of 2026.
+6. If you turned the **Data API** off when creating the project, turn it back on under **Integrations → Data API**. You don't need *Automatically expose new tables*; migration 0002 grants exactly what the app needs.
 
-### 2. Run it on your computer
-```bash
-copy .env.example .env.local      # Windows  (macOS/Linux: cp .env.example .env.local)
-# edit .env.local and paste your Project URL + anon key
-npm install
-npm run dev
-```
-Open <http://localhost:3000>, create an account, then **Start a household**.
+### 2. Connect the app to your database (paste the URL and key)
+The app reads your Project URL and publishable key from a file called `.env.local` in the project folder (the same folder as `package.json`). That file is git-ignored, so your values never get committed.
+
+1. Make your own copy of the template:
+   ```bash
+   copy .env.example .env.local      # Windows  (macOS/Linux: cp .env.example .env.local)
+   ```
+2. Open `.env.local` in any text editor and replace the placeholder values with the two things you copied in step 1.5. No quotes, no spaces around `=`:
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=https://abcdefghijkl.supabase.co
+   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_xxxxxxxxxxxxxxxxxxxx
+   ```
+   (Those are made-up examples — use your own.) Save the file.
+3. Install and start the app:
+   ```bash
+   npm install
+   npm run dev
+   ```
+   If the dev server was already running when you edited `.env.local`, stop it (Ctrl+C) and start it again — env files are only read at startup.
+4. Open <http://localhost:3000>. If you see "This site isn't connected to a database yet", the values weren't picked up: check the file is named exactly `.env.local`, sits next to `package.json`, uses the exact variable names above, and restart the dev server. Otherwise you'll see the sign-in screen: create an account, then **Start a household**.
+
+> Only the **publishable** key goes here. If you ever see a key starting `sb_secret_` (or a long `eyJ…` `service_role` key), do not paste it into this app.
 
 ### 3. Put it online (so both phones can use it)
+`.env.local` stays on your computer, so the hosted copy needs the same two values entered in Vercel.
 1. Push this folder to a GitHub repository.
 2. On <https://vercel.com> → **Add New → Project** → import the repo.
-3. Under **Environment Variables** add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
-4. Deploy, then put the Vercel URL into Supabase **Site URL** (step 1.4).
+3. Before clicking Deploy, open **Environment Variables** and add two entries — name `NEXT_PUBLIC_SUPABASE_URL` with your Project URL as the value, and name `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` with your publishable key as the value. (If you add them after deploying, trigger a **Redeploy**; the values are baked in at build time.)
+4. Deploy, then put the Vercel URL into Supabase **Site URL** (step 1.4). Also add that Vercel address under **Authentication → URL Configuration** as an allowed redirect URL if the dashboard asks for one.
 
 ### 4. Install on the phones
 * **iPhone** – open the site in Safari → Share → **Add to Home Screen**.
@@ -69,11 +88,12 @@ Open <http://localhost:3000>, create an account, then **Start a household**.
 4. Check a chore off on one phone — it should tick on the other within a second or two, and points should appear under **Rewards**.
 5. Add a reward (e.g. "Movie night", family, 100) and watch the jar fill; redeem it and approve.
 6. **Family → Invite → Pet sitter** with dates, open the link in a private window and confirm the sitter sees *only* the pet checklist, then use **Revoke** and confirm access disappears.
-7. In Supabase **Database → Replication**, confirm the tables are listed under `supabase_realtime` (the migration does this automatically).
+7. In Supabase **Database → Replication**, confirm the tables are listed under `supabase_realtime` (0001 does this automatically).
 
 ## Project layout
 ```
 supabase/migrations/0001_init.sql   schema, RLS policies, RPC functions
+supabase/migrations/0002_explicit_grants.sql   explicit table grants (works with Supabase's opt-in Data API)
 tests/db.test.ts                    security + points tests (npm test)
 src/lib/hub.tsx                     auth gate, household data, realtime sync
 src/app/(app)/*                     Home, Calendar, Tasks, Pets, Rewards, Family

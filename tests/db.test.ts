@@ -1,12 +1,19 @@
 import { PGlite } from '@electric-sql/pglite';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 // Runs the real migration against an in-process Postgres and impersonates Supabase users
 // by setting the role + request.jwt.claim.sub (what auth.uid() reads).
 
 const db = new PGlite();
-const migration = readFileSync('supabase/migrations/0001_init.sql', 'utf8');
+// Every migration, in order — exactly what `supabase db push` would apply.
+const migrations = readdirSync('supabase/migrations')
+  .filter((f) => f.endsWith('.sql'))
+  .sort()
+  .map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8'));
+// LEGACY_GRANTS=1 simulates an older Supabase project that auto-grants new tables (the situation
+// when 0001 was applied there); default simulates the new opt-in behaviour with no automatic grants.
+const legacyGrants = process.env.LEGACY_GRANTS === '1';
 
 const U = {
   alice: '00000000-0000-0000-0000-00000000000a', // owner, household A
@@ -52,11 +59,15 @@ beforeAll(async () => {
       $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
     grant usage on schema auth to anon, authenticated;
     grant usage on schema public to anon, authenticated;
-    alter default privileges in schema public grant all on tables to anon, authenticated;
-    alter default privileges in schema public grant execute on functions to anon, authenticated;
   `);
+  if (legacyGrants) {
+    await db.exec(`
+      alter default privileges in schema public grant all on tables to anon, authenticated;
+      alter default privileges in schema public grant execute on functions to anon, authenticated;
+    `);
+  }
   for (const id of Object.values(U)) await db.query('insert into auth.users (id) values ($1)', [id]);
-  await db.exec(migration);
+  for (const m of migrations) await db.exec(m);
 
   A = (await as(U.alice, `select create_household('Bentley', 'Alice') as id`))[0].id;
   B = (await as(U.eve, `select create_household('Eve House', 'Eve') as id`))[0].id;
