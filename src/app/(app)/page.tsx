@@ -4,12 +4,9 @@ import Link from 'next/link';
 import { useMemo } from 'react';
 import { OccRow } from '@/components/OccRow';
 import { Avatar } from '@/components/ui';
-import { addDays, fmtDate, fmtDateTime, greeting, today } from '@/lib/dates';
-import { useHub, useOccurrences } from '@/lib/hub';
-import type { OccWithTask } from '@/lib/types';
-
-const byTime = (a: OccWithTask, b: OccWithTask) =>
-  (a.task.due_time ?? '99:99').localeCompare(b.task.due_time ?? '99:99') || a.task.title.localeCompare(b.task.title);
+import { addDays, fmtDate, fmtDateTime, greeting, tsToDate, today } from '@/lib/dates';
+import { useHub } from '@/lib/hub';
+import { byOccTime, useOccurrences } from '@/lib/occurrences';
 
 export default function Home() {
   const { isSitter } = useHub();
@@ -25,17 +22,17 @@ function FamilyHome() {
     const todays = rows.filter((r) => r.due_date === t);
     return {
       overdue: rows.filter((r) => r.due_date < t && r.status === 'pending').sort((a, b) => a.due_date.localeCompare(b.due_date)),
-      morning: todays.filter((r) => r.task.routine === 'morning' && r.status === 'pending').sort(byTime),
-      evening: todays.filter((r) => r.task.routine === 'evening' && r.status === 'pending').sort(byTime),
-      other: todays.filter((r) => !r.task.routine && r.status === 'pending').sort(byTime),
-      done: todays.filter((r) => r.status === 'done').sort(byTime),
+      morning: todays.filter((r) => r.task.routine === 'morning' && r.status === 'pending').sort(byOccTime),
+      evening: todays.filter((r) => r.task.routine === 'evening' && r.status === 'pending').sort(byOccTime),
+      other: todays.filter((r) => !r.task.routine && r.status === 'pending').sort(byOccTime),
+      done: todays.filter((r) => r.status === 'done').sort(byOccTime),
     };
   }, [rows, t]);
 
   const todays = rows.filter((r) => r.due_date === t);
   const left = todays.filter((r) => r.status === 'pending').length;
   const petDue = todays.filter((r) => r.status === 'pending' && r.task.pet_id).length;
-  const todaysEvents = events.filter((e) => new Date(e.starts_at).toDateString() === new Date().toDateString());
+  const todaysEvents = events.filter((e) => tsToDate(e.starts_at) === t);
   const nextFamily = rewards.filter((r) => r.kind === 'family').sort((a, b) => a.cost - b.cost)[0];
   const pendingApprovals = redemptions.filter((r) => r.status === 'pending').length;
   const myPoints = balances.member[me.id] ?? 0;
@@ -145,7 +142,7 @@ function SitterHome() {
         <div className="tile"><b>{pets.length}</b><span>Animals</span></div>
       </div>
       {days.map((d, i) => {
-        const list = rows.filter((r) => r.due_date === d).sort(byTime);
+        const list = rows.filter((r) => r.due_date === d).sort(byOccTime);
         if (i > 0 && list.length === 0) return null;
         return (
           <div key={d}>

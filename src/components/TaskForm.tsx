@@ -1,18 +1,19 @@
 'use client';
 
 import { useState } from 'react';
-import { DAY_LETTERS, today } from '@/lib/dates';
+import { patchRow, saveRow } from '@/lib/api';
+import { DAY_LETTERS, FULL_DAY_NAMES, today } from '@/lib/dates';
 import { useHub } from '@/lib/hub';
-import { supabase } from '@/lib/supabase';
 import type { Recurrence, Task } from '@/lib/types';
-import { attempt, Modal, SegControl } from './ui';
+import { useSubmit } from '@/lib/useSubmit';
+import { FormError, Modal, SegControl } from './ui';
 
 const CATEGORIES = ['Chores', 'Animal care', 'Kitchen', 'Laundry', 'Outdoors', 'Kids', 'Errands', 'Other'];
 
 type RecType = Recurrence['type'];
 
 export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPetId?: string; onClose: () => void }) {
-  const { household, members, pets, reload } = useHub();
+  const { household, family, pets, reload } = useHub();
   const r = task?.recurrence;
   const [title, setTitle] = useState(task?.title ?? '');
   const [category, setCategory] = useState(task?.category ?? (presetPetId ? 'Animal care' : 'Chores'));
@@ -29,10 +30,7 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
   const [start, setStart] = useState(task?.start_date ?? today());
   const [end, setEnd] = useState(task?.end_date ?? '');
   const [guest, setGuest] = useState(task?.guest_visible ?? !!presetPetId);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  const assignable = members.filter((m) => m.role !== 'sitter');
+  const { busy, error, setError, run } = useSubmit();
 
   function recurrence(): Recurrence {
     if (recType === 'weekdays') return { type: 'weekdays', days: [...days].sort() };
@@ -44,8 +42,6 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
     e.preventDefault();
     if (recType === 'weekdays' && days.length === 0) return setError('Pick at least one day.');
     if (end && end < start) return setError('The end date is before the start date.');
-    setBusy(true);
-    setError('');
     const row = {
       title: title.trim(),
       category: category.trim() || 'Chores',
@@ -61,30 +57,20 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
       end_date: end || null,
       guest_visible: guest,
     };
-    const sb = supabase();
-    const { error: err } = task
-      ? await sb.from('tasks').update(row).eq('id', task.id)
-      : await sb.from('tasks').insert({ ...row, household_id: household.id });
-    if (err) {
-      setError(err.message);
-      setBusy(false);
-      return;
-    }
-    await reload();
-    onClose();
+    const ok = await run(async () => {
+      await saveRow('tasks', row, { id: task?.id, household: household.id });
+      await reload();
+    });
+    if (ok) onClose();
   }
 
   async function archive() {
     if (!task || !confirm(`Remove “${task.title}”? Past history stays, future occurrences are removed.`)) return;
-    setBusy(true);
-    const ok = await attempt(async () => {
-      const { error: err } = await supabase().from('tasks').update({ archived: true }).eq('id', task.id);
-      if (err) throw err;
-    }, 'Task removed');
-    if (ok) {
+    const ok = await run(async () => {
+      await patchRow('tasks', task.id, { archived: true });
       await reload();
-      onClose();
-    } else setBusy(false);
+    });
+    if (ok) onClose();
   }
 
   return (
@@ -98,7 +84,7 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
             <label>Who</label>
             <select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
               <option value="">Anyone (first to finish)</option>
-              {assignable.map((m) => (
+              {family.map((m) => (
                 <option key={m.id} value={m.id}>{m.display_name}</option>
               ))}
             </select>
@@ -121,7 +107,7 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
               <button
                 type="button"
                 key={i}
-                aria-label={['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][i]}
+                aria-label={FULL_DAY_NAMES[i]}
                 className={days.includes(i) ? 'on' : ''}
                 onClick={() => setDays((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i]))}
               >
@@ -189,7 +175,7 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
           <label htmlFor="gv">Visible to pet sitters</label>
         </div>
 
-        {error && <div className="error">{error}</div>}
+        <FormError error={error} />
         <div className="row" style={{ marginTop: 18 }}>
           <button className="btn primary grow" disabled={busy || !title.trim()}>{busy ? 'Saving…' : 'Save'}</button>
           {task && (

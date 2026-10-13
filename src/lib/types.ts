@@ -1,5 +1,7 @@
 export type Role = 'owner' | 'adult' | 'child' | 'sitter';
 
+export const roleLabel = (r: Role) => (r === 'owner' ? 'Owner' : r === 'adult' ? 'Adult' : r === 'child' ? 'Child' : 'Pet sitter');
+
 export type Household = { id: string; name: string; family_bonus_pct: number; sitter_info: string };
 
 export type Member = {

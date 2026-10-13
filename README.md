@@ -26,7 +26,8 @@ Stack: **Next.js 15 + TypeScript** (UI) · **Supabase** (auth, Postgres, row-lev
 * Only the **publishable** key (`sb_publishable_…`) is used in the browser. **Never** put a **secret** key (`sb_secret_…`) or a legacy `service_role` key in this app — this app doesn't need one at all.
 * Migration `0002` states the exact table grants (the signed-in role can read most tables and only call the checked functions for writes; the signed-out role gets nothing), so it works whether your project auto-grants new tables or not.
 
-`npm test` runs 26 tests that apply every migration in order to an in-process Postgres and attack it:
+`npm test` runs the database tests plus a few unit tests;
+the database tests that apply every migration in order to an in-process Postgres and attack it:
 cross-household reads/writes, expired / not-yet-started / revoked sitters, duplicate and concurrent completions,
 direct point inserts, role escalation, invite replay, reward overspending, and more.
 
@@ -40,7 +41,8 @@ direct point inserts, role escalation, invite replay, reward overspending, and m
 1. Go to <https://supabase.com> → **New project** (any name, pick a region near you, save the DB password somewhere).
 2. In the project: **SQL Editor → New query**, paste the whole of
    [`0001_init.sql`](supabase/migrations/0001_init.sql), click **Run**, then do the same with
-   [`0002_explicit_grants.sql`](supabase/migrations/0002_explicit_grants.sql). Each should finish with "Success".
+   [`0002_explicit_grants.sql`](supabase/migrations/0002_explicit_grants.sql) and
+   [`0003_audit_fixes.sql`](supabase/migrations/0003_audit_fixes.sql). Each should finish with "Success".
    Run them in order; run only the ones you haven't applied yet (0002 is safe to re-run).
 3. **Authentication → Providers → Email**: keep it enabled. (While testing you can turn **Confirm email** off so sign-up logs you straight in; turn it back on for production.)
 4. **Authentication → URL Configuration**: set **Site URL** to your deployed address once you have one (and add `http://localhost:3000` for local testing). Invite/password-reset emails use this.

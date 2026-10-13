@@ -1,26 +1,23 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { attempt, Avatar, Modal, SegControl } from '@/components/ui';
+import { useState } from 'react';
+import { AdjustForm, RewardForm } from '@/components/RewardForms';
+import { attempt, Avatar } from '@/components/ui';
+import { rpc } from '@/lib/api';
 import { fmtDateTime } from '@/lib/dates';
-import { rpc, useHub } from '@/lib/hub';
-import { supabase } from '@/lib/supabase';
+import { useBlockSitter } from '@/lib/guards';
+import { useHub } from '@/lib/hub';
 import type { Reward } from '@/lib/types';
 
 export default function RewardsPage() {
-  const router = useRouter();
-  const { me, members, rewards, redemptions, ledger, balances, household, isAdult, isSitter, memberById, reload } = useHub();
+  const blocked = useBlockSitter();
+  const { me, family, rewards, redemptions, ledger, balances, household, isAdult, memberById, reload } = useHub();
   const [editing, setEditing] = useState<Reward | 'new' | null>(null);
   const [adjusting, setAdjusting] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (isSitter) router.replace('/');
-  }, [isSitter, router]);
-  if (isSitter) return null;
+  if (blocked) return null;
 
-  const family = members.filter((m) => m.role !== 'sitter');
   const myPoints = balances.member[me.id] ?? 0;
   const pending = redemptions.filter((r) => r.status === 'pending');
   const goal = rewards.filter((r) => r.kind === 'family').sort((a, b) => a.cost - b.cost);
@@ -161,102 +158,3 @@ export default function RewardsPage() {
 
 const labelKind = (k: string) =>
   ({ earn: 'Earned', family_bonus: 'Team bonus', reverse: 'Reversed', redeem: 'Redeemed', adjust: 'Adjusted' } as Record<string, string>)[k] ?? k;
-
-function RewardForm({ reward, onClose }: { reward?: Reward; onClose: () => void }) {
-  const { household, reload } = useHub();
-  const [title, setTitle] = useState(reward?.title ?? '');
-  const [cost, setCost] = useState(String(reward?.cost ?? 50));
-  const [kind, setKind] = useState<Reward['kind']>(reward?.kind ?? 'individual');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError('');
-    const row = { title: title.trim(), cost: Math.max(1, Math.round(Number(cost) || 1)), kind };
-    const sb = supabase();
-    const { error: err } = reward ? await sb.from('rewards').update(row).eq('id', reward.id) : await sb.from('rewards').insert({ ...row, household_id: household.id });
-    if (err) {
-      setError(err.message);
-      setBusy(false);
-      return;
-    }
-    await reload();
-    onClose();
-  }
-  async function remove() {
-    if (!reward || !confirm(`Remove “${reward.title}”?`)) return;
-    setBusy(true);
-    const ok = await attempt(async () => {
-      const { error: err } = await supabase().from('rewards').update({ active: false }).eq('id', reward.id);
-      if (err) throw err;
-    });
-    if (ok) {
-      await reload();
-      onClose();
-    } else setBusy(false);
-  }
-
-  return (
-    <Modal title={reward ? 'Edit reward' : 'New reward'} onClose={onClose}>
-      <form onSubmit={save}>
-        <label>Reward</label>
-        <input required autoFocus value={title} maxLength={80} placeholder="e.g. Family movie night" onChange={(e) => setTitle(e.target.value)} />
-        <label>Cost (points)</label>
-        <input type="number" min={1} required value={cost} onChange={(e) => setCost(e.target.value)} />
-        <label>Who earns it?</label>
-        <SegControl value={kind} onChange={setKind} options={[['individual', 'Individual'], ['family', 'Whole family']]} />
-        <p className="muted small">
-          {kind === 'individual' ? 'Spent from one person’s own points.' : 'Spent from the shared family jar, which fills as everyone completes tasks.'}
-        </p>
-        {error && <div className="error">{error}</div>}
-        <div className="row" style={{ marginTop: 14 }}>
-          <button className="btn primary grow" disabled={busy || !title.trim()}>Save</button>
-          {reward && <button type="button" className="btn danger" disabled={busy} onClick={remove}>Remove</button>}
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-function AdjustForm({ onClose }: { onClose: () => void }) {
-  const { members, household, reload } = useHub();
-  const [who, setWho] = useState<string>(members.find((m) => m.role !== 'sitter')?.id ?? '');
-  const [delta, setDelta] = useState('10');
-  const [note, setNote] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError('');
-    try {
-      await rpc('adjust_points', { p_household: household.id, p_member: who === 'family' ? null : who, p_delta: Math.round(Number(delta)), p_note: note });
-      await reload();
-      onClose();
-    } catch (err: any) {
-      setError(err.message);
-      setBusy(false);
-    }
-  }
-  return (
-    <Modal title="Adjust points" onClose={onClose}>
-      <form onSubmit={save}>
-        <p className="muted small">Bonus for a great week, or a correction. Every adjustment is recorded in the history.</p>
-        <label>Who</label>
-        <select value={who} onChange={(e) => setWho(e.target.value)}>
-          {members.filter((m) => m.role !== 'sitter').map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}
-          <option value="family">Family jar</option>
-        </select>
-        <label>Points (use a minus to remove)</label>
-        <input type="number" required value={delta} onChange={(e) => setDelta(e.target.value)} />
-        <label>Reason</label>
-        <input value={note} maxLength={80} onChange={(e) => setNote(e.target.value)} />
-        {error && <div className="error">{error}</div>}
-        <button className="btn primary block" style={{ marginTop: 14 }} disabled={busy || !Number(delta)}>Apply</button>
-      </form>
-    </Modal>
-  );
-}

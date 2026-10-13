@@ -1,23 +1,19 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { TaskForm } from '@/components/TaskForm';
 import { Avatar } from '@/components/ui';
 import { fmtTime } from '@/lib/dates';
+import { useBlockSitter } from '@/lib/guards';
 import { useHub } from '@/lib/hub';
 import { describeRecurrence } from '@/lib/recurrence';
 import type { Task } from '@/lib/types';
 
 export default function TasksPage() {
-  const router = useRouter();
-  const { tasks, members, pets, isAdult, isSitter, memberById } = useHub();
+  const blocked = useBlockSitter();
+  const { tasks, family, pets, isAdult, memberById } = useHub();
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
   const [filter, setFilter] = useState<string>('all');
-
-  useEffect(() => {
-    if (isSitter) router.replace('/');
-  }, [isSitter, router]);
 
   const filtered = useMemo(
     () =>
@@ -35,7 +31,7 @@ export default function TasksPage() {
     return [...g.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [filtered]);
 
-  if (isSitter) return null;
+  if (blocked) return null;
 
   return (
     <>
@@ -44,7 +40,7 @@ export default function TasksPage() {
         <button className={`chip ${filter === 'all' ? 'on' : ''}`} onClick={() => setFilter('all')}>All</button>
         <button className={`chip ${filter === 'open' ? 'on' : ''}`} onClick={() => setFilter('open')}>Open (anyone)</button>
         <button className={`chip ${filter === 'pets' ? 'on' : ''}`} onClick={() => setFilter('pets')}>🐾 Pets</button>
-        {members.filter((m) => m.role !== 'sitter').map((m) => (
+        {family.map((m) => (
           <button key={m.id} className={`chip ${filter === m.id ? 'on' : ''}`} onClick={() => setFilter(m.id)}>{m.display_name}</button>
         ))}
       </div>

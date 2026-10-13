@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { PetForm } from '@/components/PetForm';
 import { TaskForm } from '@/components/TaskForm';
-import { attempt, Modal, speciesEmoji } from '@/components/ui';
+import { attempt, speciesEmoji } from '@/components/ui';
+import { addPetNote, listPetNotes, rpc } from '@/lib/api';
 import { fmtDateTime, fmtTime } from '@/lib/dates';
-import { rpc, useHub } from '@/lib/hub';
+import { useHub } from '@/lib/hub';
+import { byDueTime } from '@/lib/occurrences';
 import { describeRecurrence } from '@/lib/recurrence';
-import { supabase } from '@/lib/supabase';
 import type { Pet, PetNote, Task } from '@/lib/types';
 
 export default function PetsPage() {
@@ -17,13 +19,9 @@ export default function PetsPage() {
 
   useEffect(() => {
     let live = true;
-    supabase()
-      .from('pet_notes')
-      .select('id,pet_id,author_member_id,body,created_at')
-      .eq('household_id', household.id)
-      .order('created_at', { ascending: false })
-      .limit(200)
-      .then(({ data }) => live && setNotes((data as PetNote[]) ?? []));
+    listPetNotes(household.id)
+      .then((rows) => live && setNotes(rows))
+      .catch(() => { /* notes are secondary; keep what we have */ });
     return () => {
       live = false;
     };
@@ -81,17 +79,12 @@ function PetCard({ pet, notes, onEdit }: { pet: Pet; notes: PetNote[]; onEdit: (
   const [taskEdit, setTaskEdit] = useState<Task | 'new' | null>(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
-  const petTasks = tasks.filter((t) => t.pet_id === pet.id).sort((a, b) => (a.due_time ?? '99').localeCompare(b.due_time ?? '99'));
+  const petTasks = tasks.filter((t) => t.pet_id === pet.id).sort(byDueTime);
 
   async function addNote() {
     if (!note.trim()) return;
     setBusy(true);
-    const ok = await attempt(async () => {
-      const { error } = await supabase()
-        .from('pet_notes')
-        .insert({ household_id: household.id, pet_id: pet.id, author_member_id: me.id, body: note.trim() });
-      if (error) throw error;
-    }, 'Note saved');
+    const ok = await attempt(() => addPetNote(household.id, pet.id, me.id, note.trim()), 'Note saved');
     if (ok) {
       setNote('');
       await reload();
@@ -167,82 +160,5 @@ function PetCard({ pet, notes, onEdit }: { pet: Pet; notes: PetNote[]; onEdit: (
         <TaskForm task={taskEdit === 'new' ? undefined : taskEdit} presetPetId={pet.id} onClose={() => setTaskEdit(null)} />
       )}
     </div>
-  );
-}
-
-function PetForm({ pet, onClose }: { pet?: Pet; onClose: () => void }) {
-  const { household, reload } = useHub();
-  const [name, setName] = useState(pet?.name ?? '');
-  const [species, setSpecies] = useState<Pet['species']>(pet?.species ?? 'dog');
-  const [breed, setBreed] = useState(pet?.breed ?? '');
-  const [instructions, setInstructions] = useState(pet?.instructions ?? '');
-  const [guest, setGuest] = useState(pet?.guest_visible ?? true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError('');
-    const row = { name: name.trim(), species, breed: breed.trim(), instructions: instructions.trim(), guest_visible: guest };
-    const sb = supabase();
-    const { error: err } = pet ? await sb.from('pets').update(row).eq('id', pet.id) : await sb.from('pets').insert({ ...row, household_id: household.id });
-    if (err) {
-      setError(err.message);
-      setBusy(false);
-      return;
-    }
-    await reload();
-    onClose();
-  }
-
-  async function archive() {
-    if (!pet || !confirm(`Remove ${pet.name}? Their care tasks will be removed too.`)) return;
-    setBusy(true);
-    const ok = await attempt(async () => {
-      const { error: err } = await supabase().from('pets').update({ archived: true }).eq('id', pet.id);
-      if (err) throw err;
-      const { error: err2 } = await supabase().from('tasks').update({ archived: true }).eq('pet_id', pet.id);
-      if (err2) throw err2;
-    }, 'Removed');
-    if (ok) {
-      await reload();
-      onClose();
-    } else setBusy(false);
-  }
-
-  return (
-    <Modal title={pet ? `Edit ${pet.name}` : 'Add an animal'} onClose={onClose}>
-      <form onSubmit={save}>
-        <label>Name</label>
-        <input required autoFocus value={name} maxLength={40} onChange={(e) => setName(e.target.value)} />
-        <div className="two">
-          <div>
-            <label>Kind</label>
-            <select value={species} onChange={(e) => setSpecies(e.target.value as Pet['species'])}>
-              <option value="dog">Dog</option>
-              <option value="cat">Cat</option>
-              <option value="chicken">Chicken</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-          <div>
-            <label>Breed (optional)</label>
-            <input value={breed} onChange={(e) => setBreed(e.target.value)} />
-          </div>
-        </div>
-        <label>Care instructions</label>
-        <textarea value={instructions} maxLength={1500} placeholder="Food amounts, medications, quirks, vet…" onChange={(e) => setInstructions(e.target.value)} />
-        <div className="check-row">
-          <input id="pg" type="checkbox" checked={guest} onChange={(e) => setGuest(e.target.checked)} />
-          <label htmlFor="pg">Share with pet sitters</label>
-        </div>
-        {error && <div className="error">{error}</div>}
-        <div className="row" style={{ marginTop: 18 }}>
-          <button className="btn primary grow" disabled={busy || !name.trim()}>Save</button>
-          {pet && <button type="button" className="btn danger" disabled={busy} onClick={archive}>Remove</button>}
-        </div>
-      </form>
-    </Modal>
   );
 }

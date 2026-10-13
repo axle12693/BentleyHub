@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { fmtDateTime, fmtTime, today } from '@/lib/dates';
-import { rpc, useHub } from '@/lib/hub';
+import { rpc } from '@/lib/api';
+import { fmtDateTime, fmtTime, hhmm, today } from '@/lib/dates';
+import { useHub } from '@/lib/hub';
 import type { OccWithTask } from '@/lib/types';
 import { attempt, Avatar, Modal, toast } from './ui';
 
@@ -17,7 +18,7 @@ export function OccRow({ occ, showDate }: { occ: OccWithTask; showDate?: boolean
   const assignee = memberById(t.assignee_member_id);
   const pet = pets.find((p) => p.id === t.pet_id);
   const completer = memberById(occ.completed_by);
-  const overdue = !done && (occ.due_date < today() || (occ.due_date === today() && !!t.due_time && t.due_time.slice(0, 5) < nowHM()));
+  const overdue = !done && (occ.due_date < today() || (occ.due_date === today() && !!t.due_time && t.due_time.slice(0, 5) < hhmm(new Date())));
   const lockedForMe = me.role === 'child' && !!t.assignee_member_id && t.assignee_member_id !== me.id;
   const canToggle = !busy && (done ? isAdult : !lockedForMe);
 
@@ -107,9 +108,4 @@ export function OccRow({ occ, showDate }: { occ: OccWithTask; showDate?: boolean
       )}
     </>
   );
-}
-
-function nowHM() {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }

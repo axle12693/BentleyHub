@@ -2,93 +2,113 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
-import { SetupNeeded } from '@/lib/hub';
+import { FormError } from '@/components/ui';
+import { SetupNeeded, Splash } from '@/components/Splash';
+import { safeNext } from '@/lib/auth';
 import { isConfigured, supabase } from '@/lib/supabase';
+import { useSubmit } from '@/lib/useSubmit';
 
-/** Only allow same-site relative redirects. */
-const safeNext = (n: string | null) => (n && n.startsWith('/') && !n.startsWith('//') ? n : '/');
+type Mode = 'in' | 'up' | 'recover';
 
 function LoginForm() {
   const router = useRouter();
-  const next = safeNext(useSearchParams().get('next'));
-  const [mode, setMode] = useState<'in' | 'up'>('in');
+  const params = useSearchParams();
+  const next = safeNext(params.get('next'));
+  const [mode, setMode] = useState<Mode>('in');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
   const [info, setInfo] = useState('');
+  const { busy, error, setError, run } = useSubmit();
 
   useEffect(() => {
     if (!isConfigured) return;
-    supabase().auth.getSession().then(({ data }) => data.session && router.replace(next));
-  }, [next, router]);
+    const sb = supabase();
+    // Arriving from a password-reset email: the link signs the user in, but they must set a new
+    // password rather than be sent on to the app.
+    const recovering = params.get('reset') === '1' || window.location.hash.includes('type=recovery');
+    const { data: sub } = sb.auth.onAuthStateChange((evt) => {
+      if (evt === 'PASSWORD_RECOVERY') setMode('recover');
+    });
+    if (recovering) setMode('recover');
+    else sb.auth.getSession().then(({ data }) => data.session && router.replace(next));
+    return () => sub.subscription.unsubscribe();
+  }, [next, params, router]);
 
   if (!isConfigured) return <SetupNeeded />;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setBusy(true);
-    setError('');
     setInfo('');
-    const sb = supabase();
-    if (mode === 'in') {
-      const { error: err } = await sb.auth.signInWithPassword({ email, password });
-      if (err) setError(err.message);
-      else router.replace(next);
-    } else {
-      const { data, error: err } = await sb.auth.signUp({ email, password });
-      if (err) setError(err.message);
-      else if (data.session) router.replace(next);
-      else setInfo('Check your email for a confirmation link, then come back and sign in.');
-    }
-    setBusy(false);
+    await run(async () => {
+      const sb = supabase();
+      if (mode === 'in') {
+        const { error: err } = await sb.auth.signInWithPassword({ email, password });
+        if (err) throw err;
+        router.replace(next);
+      } else if (mode === 'up') {
+        const { data, error: err } = await sb.auth.signUp({ email, password });
+        if (err) throw err;
+        if (data.session) router.replace(next);
+        else setInfo('Check your email for a confirmation link, then come back and sign in.');
+      } else {
+        const { error: err } = await sb.auth.updateUser({ password });
+        if (err) throw err;
+        router.replace('/');
+      }
+    });
   }
 
   async function reset() {
     if (!email) return setError('Enter your email first.');
-    const { error: err } = await supabase().auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + '/login' });
+    const { error: err } = await supabase().auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/login?reset=1` });
     if (err) setError(err.message);
-    else setInfo('Password reset email sent.');
+    else {
+      setError('');
+      setInfo('Password reset email sent.');
+    }
   }
 
+  const recover = mode === 'recover';
   return (
-    <main className="splash">
-      <div className="splash-card">
-        <div className="logo-mark">🏡</div>
-        <h1>Bentley Home Hub</h1>
-        <p className="muted">Your family’s chores, pets, calendar and rewards.</p>
+    <Splash>
+      <p className="muted">{recover ? 'Choose a new password.' : 'Your family’s chores, pets, calendar and rewards.'}</p>
+      {!recover && (
         <div className="seg" style={{ margin: '16px 0 4px' }}>
           <button type="button" className={mode === 'in' ? 'on' : ''} onClick={() => setMode('in')}>Sign in</button>
           <button type="button" className={mode === 'up' ? 'on' : ''} onClick={() => setMode('up')}>Create account</button>
         </div>
-        <form onSubmit={submit}>
-          <label htmlFor="email">Email</label>
-          <input id="email" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <label htmlFor="pw">Password</label>
-          <input
-            id="pw"
-            type="password"
-            required
-            minLength={8}
-            autoComplete={mode === 'in' ? 'current-password' : 'new-password'}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          {mode === 'up' && <p className="muted small">At least 8 characters.</p>}
-          {error && <div className="error">{error}</div>}
-          {info && <div className="success">{info}</div>}
-          <button className="btn primary block" style={{ marginTop: 16 }} disabled={busy}>
-            {busy ? 'One moment…' : mode === 'in' ? 'Sign in' : 'Create account'}
-          </button>
-          {mode === 'in' && (
-            <p style={{ textAlign: 'center' }}>
-              <button type="button" className="btn ghost small" onClick={reset}>Forgot password?</button>
-            </p>
-          )}
-        </form>
-        <p className="muted small">Have an invite from a family member or for pet-sitting? Create an account, then enter your invite code.</p>
-      </div>
-    </main>
+      )}
+      <form onSubmit={submit}>
+        {!recover && (
+          <>
+            <label htmlFor="email">Email</label>
+            <input id="email" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </>
+        )}
+        <label htmlFor="pw">{recover ? 'New password' : 'Password'}</label>
+        <input
+          id="pw"
+          type="password"
+          required
+          minLength={8}
+          autoComplete={mode === 'in' ? 'current-password' : 'new-password'}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        {mode !== 'in' && <p className="muted small">At least 8 characters.</p>}
+        <FormError error={error} />
+        {info && <div className="success">{info}</div>}
+        <button className="btn primary block" style={{ marginTop: 16 }} disabled={busy}>
+          {busy ? 'One moment…' : mode === 'in' ? 'Sign in' : mode === 'up' ? 'Create account' : 'Save new password'}
+        </button>
+        {mode === 'in' && (
+          <p style={{ textAlign: 'center' }}>
+            <button type="button" className="btn ghost small" onClick={reset}>Forgot password?</button>
+          </p>
+        )}
+      </form>
+      {!recover && <p className="muted small">Have an invite from a family member or for pet-sitting? Create an account, then enter your invite code.</p>}
+    </Splash>
   );
 }
 

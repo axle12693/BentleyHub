@@ -334,3 +334,46 @@ describe('starter pets', () => {
     await fails(U.eve, `select seed_starter_pets($1)`, [B]);
   });
 });
+
+describe('audit fixes (migration 0003)', () => {
+  it('my_memberships distinguishes active from ended access', async () => {
+    await admin(`update members set sitter_start = now() - interval '10 days', sitter_end = now() - interval '2 days' where id=$1`, [mOld]);
+    const old = await as(U.oldsitter, `select * from my_memberships()`);
+    expect(old).toHaveLength(1);
+    expect(old[0]).toMatchObject({ household_id: A, role: 'sitter', active: false });
+    expect((await as(U.alice, `select * from my_memberships()`))[0]).toMatchObject({ household_id: A, active: true });
+    const eve = (await as(U.eve, `select household_id from my_memberships()`)).map((r) => r.household_id);
+    expect(eve).toContain(B);
+    expect(await as(null, `select * from my_memberships()`)).toHaveLength(0);
+  });
+
+  it('a sitter cannot see or complete a shared task whose pet is hidden from sitters', async () => {
+    const secret = (await admin(`select id from pets where name='Secret'`))[0].id;
+    const t = await newTask(U.alice, 'Feed Secret', ', guest_visible, pet_id', ', true, $3', [secret]);
+    await gen();
+    expect((await as(U.sitter, `select id from tasks where id=$1`, [t]))).toHaveLength(0);
+    await fails(U.sitter, `select complete_occurrence($1)`, [await occFor(t)]);
+    expect((await as(U.alice, `select id from tasks where id=$1`, [t]))).toHaveLength(1);
+  });
+
+  it('an expired sitter can be re-invited, but an active member cannot re-join', async () => {
+    await admin(`update members set revoked_at = null, sitter_start = now() - interval '10 days', sitter_end = now() - interval '2 days' where id=$1`, [mOld]);
+    const code = (await as(U.alice, `select create_invite($1,'child','Olive') as c`, [A]))[0].c;
+    await as(U.oldsitter, `select accept_invite($1)`, [code]);
+    expect((await admin(`select role from members where id=$1`, [mOld]))[0].role).toBe('child');
+    const again = (await as(U.alice, `select create_invite($1,'child','Bob again') as c`, [A]))[0].c;
+    await fails(U.oldsitter, `select accept_invite($1)`, [again]);
+  });
+
+  it('archiving a pet archives its tasks in the same transaction', async () => {
+    const pet = (await admin(`insert into pets (household_id, name) values ($1,'Temp') returning id`, [A]))[0].id;
+    const t = await newTask(U.alice, 'Temp care', ', pet_id', ', $3', [pet]);
+    await as(U.alice, `update pets set archived = true where id=$1`, [pet]);
+    expect((await admin(`select archived from tasks where id=$1`, [t]))[0].archived).toBe(true);
+  });
+
+  it('member colours must be #RRGGBB', async () => {
+    await fails(U.bob, `select update_member($1,'Bob','red')`, [mBob]);
+    await as(U.bob, `select update_member($1,'Bob','#aabbcc')`, [mBob]);
+  });
+});

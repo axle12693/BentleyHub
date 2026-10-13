@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
+import { errMsg } from '@/lib/api';
 import type { Member } from '@/lib/types';
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
@@ -67,8 +68,6 @@ export function ToastHost() {
   );
 }
 
-export const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
-
 /** Runs an async action, surfacing failures as a toast. Returns true on success. */
 export async function attempt(fn: () => Promise<unknown>, okMsg?: string): Promise<boolean> {
   try {
@@ -95,5 +94,32 @@ export function SegControl<T extends string>({ value, options, onChange }: { val
 
 export const speciesEmoji = (s: string) => (s === 'dog' ? '🐕' : s === 'cat' ? '🐈' : s === 'chicken' ? '🐔' : '🐾');
 
-export const roleLabel = (r: Member['role']) =>
-  r === 'owner' ? 'Owner' : r === 'adult' ? 'Adult' : r === 'child' ? 'Child' : 'Pet sitter';
+export const MEMBER_COLORS = ['#8BA888', '#C9A87C', '#9BB5C9', '#C99BA8', '#B0A1CC', '#D6B05E', '#7FB3A6'];
+
+export function ColorPick({ value, onChange }: { value: string; onChange: (c: string) => void }) {
+  return (
+    <div className="row wrap">
+      {MEMBER_COLORS.map((c) => (
+        <button
+          key={c}
+          type="button"
+          aria-label={c}
+          onClick={() => onChange(c)}
+          style={{ width: 34, height: 34, borderRadius: '50%', background: c, border: value === c ? '3px solid var(--ink)' : '3px solid transparent', cursor: 'pointer' }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** "First day / Last day" pair of date inputs (the end can't precede the start). */
+export function DateRangeFields({ start, end, onStart, onEnd }: { start: string; end: string; onStart: (v: string) => void; onEnd: (v: string) => void }) {
+  return (
+    <div className="two">
+      <div><label>First day</label><input type="date" required value={start} onChange={(e) => onStart(e.target.value)} /></div>
+      <div><label>Last day</label><input type="date" required value={end} min={start} onChange={(e) => onEnd(e.target.value)} /></div>
+    </div>
+  );
+}
+
+export const FormError = ({ error }: { error: string }) => (error ? <div className="error">{error}</div> : null);
