@@ -5,7 +5,7 @@ import { patchRow, saveRow } from '@/lib/api';
 import { DAY_LETTERS, FULL_DAY_NAMES, today } from '@/lib/dates';
 import { useHub } from '@/lib/hub';
 import type { Recurrence, Task } from '@/lib/types';
-import { DEFAULT_CATEGORIES, canonicalCategory, uniqueCategories } from '@/lib/categories';
+import { DEFAULT_CATEGORIES, DEFAULT_CATEGORY, PET_CATEGORY, MAX_CATEGORY_LENGTH, canonicalCategory, uniqueCategories } from '@/lib/categories';
 import { useSubmit } from '@/lib/useSubmit';
 import { FormError, Modal, SegControl } from './ui';
 
@@ -17,7 +17,15 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
   const { household, family, pets, tasks, reload } = useHub();
   const r = task?.recurrence;
   const [title, setTitle] = useState(task?.title ?? '');
-  const [category, setCategory] = useState(task?.category ?? (presetPetId ? 'Animal care' : 'Chores'));
+  const [category, setCategory] = useState(() => {
+    if (task) return task.category;
+    // Prefer the usual default, but only if the household still uses it (deleted categories shouldn't resurface).
+    const inUse = uniqueCategories(tasks.map((t) => t.category));
+    const preferred = presetPetId ? PET_CATEGORY : DEFAULT_CATEGORY;
+    const match = inUse.find((c) => c.toLowerCase() === preferred.toLowerCase());
+    // Pet tasks always default to PET_CATEGORY; others fall back to any category still in use.
+    return presetPetId ? match ?? preferred : match ?? inUse[0] ?? preferred;
+  });
   const [routine, setRoutine] = useState<string>(task?.routine ?? '');
   const [assignee, setAssignee] = useState<string>(task?.assignee_member_id ?? '');
   const [petId, setPetId] = useState<string>(task?.pet_id ?? presetPetId ?? '');
@@ -35,7 +43,13 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
   const { busy, error, setError, run } = useSubmit();
-  const categoryOptions = uniqueCategories([...DEFAULT_CATEGORIES, ...tasks.map((t) => t.category), task?.category ?? '', category]);
+  const categoryOptions = uniqueCategories([
+    // The built-in list only seeds an empty household; otherwise categories are whatever tasks use (so deletes/renames stick).
+    ...(tasks.length === 0 ? DEFAULT_CATEGORIES : []),
+    ...tasks.map((t) => t.category),
+    task?.category ?? '',
+    category,
+  ]);
   const selectedCategory = canonicalCategory(category, categoryOptions);
 
   function recurrence(): Recurrence {
@@ -56,7 +70,7 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
     }
     const row = {
       title: title.trim(),
-      category: finalCategory || 'Chores',
+      category: finalCategory || DEFAULT_CATEGORY,
       routine: routine || null,
       assignee_member_id: assignee || null,
       pet_id: petId || null,
@@ -193,7 +207,7 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
                 autoFocus
                 style={{ marginTop: 6 }}
                 value={newName}
-                maxLength={40}
+                maxLength={MAX_CATEGORY_LENGTH}
                 placeholder="New category name"
                 onChange={(e) => setNewName(e.target.value)}
               />

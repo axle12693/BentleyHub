@@ -35,6 +35,15 @@ export const saveRow = (table: EditableTable, row: Record<string, unknown>, opts
 export const patchRow = (table: EditableTable, id: string, patch: Record<string, unknown>) =>
   must(supabase().from(table).update(patch).eq('id', id));
 
+/**
+ * Move every task (archived included) whose category matches `from`, case-insensitively, to `to`.
+ * Matching happens in the database (rename_task_category) so it is exact and catches tasks added since the UI loaded.
+ */
+export async function renameTaskCategory(household: string, from: string, to: string) {
+  const n = await rpc<number>('rename_task_category', { p_household: household, p_from: from, p_to: to });
+  if (!n) throw new Error('That category no longer exists (it may have just been renamed). Refreshing may help.');
+}
+
 export const deleteRow = (table: 'events' | 'invites', id: string) => must(supabase().from(table).delete().eq('id', id));
 
 export type Invite = {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { CategoryManager } from '@/components/CategoryManager';
 import { TaskFilterChips, matchesTaskFilter } from '@/components/TaskFilter';
 import { TaskForm } from '@/components/TaskForm';
 import { Avatar } from '@/components/ui';
@@ -15,6 +16,7 @@ export default function TasksPage() {
   const blocked = useBlockSitter();
   const { tasks, pets, isAdult, memberById } = useHub();
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
+  const [managing, setManaging] = useState(false);
   const [filter, setFilter] = useState<string>('all');
 
   const filtered = useMemo(
@@ -35,7 +37,10 @@ export default function TasksPage() {
 
   return (
     <>
-      <div className="topbar"><h1 className="page-title">Tasks & routines</h1></div>
+      <div className="topbar">
+        <h1 className="page-title">Tasks & routines</h1>
+        {isAdult && tasks.length > 0 && <button className="btn ghost small" onClick={() => setManaging(true)}>Categories</button>}
+      </div>
       <TaskFilterChips value={filter} onChange={setFilter} />
 
       {tasks.length === 0 && (
@@ -80,6 +85,7 @@ export default function TasksPage() {
       {isAdult && (
         <button className="fab" aria-label="Add task" onClick={() => setEditing('new')}>+</button>
       )}
+      {managing && <CategoryManager onClose={() => setManaging(false)} />}
       {editing && <TaskForm task={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} />}
     </>
   );

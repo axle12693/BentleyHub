@@ -1,4 +1,8 @@
-export const DEFAULT_CATEGORIES = ['Chores', 'Animal care', 'Kitchen', 'Laundry', 'Outdoors', 'Kids', 'Errands', 'Other'];
+export const FALLBACK_CATEGORY = 'Other';
+export const DEFAULT_CATEGORY = 'Chores';
+export const PET_CATEGORY = 'Animal care';
+export const MAX_CATEGORY_LENGTH = 40;
+export const DEFAULT_CATEGORIES = [DEFAULT_CATEGORY, PET_CATEGORY, 'Kitchen', 'Laundry', 'Outdoors', 'Kids', 'Errands', FALLBACK_CATEGORY];
 
 // Case-insensitive de-dupe; first spelling wins.
 export function uniqueCategories(list: string[]) {

@@ -443,3 +443,18 @@ describe('overdue handling (migration 0006)', () => {
   });
 });
 
+describe('rename_task_category', () => {
+  it('renames case-insensitively (archived too) for adults only, within one household', async () => {
+    const t1 = await newTask(U.alice, 'Cat one', ', category', ', $3', ['Garden']);
+    const t2 = await newTask(U.alice, 'Cat two', ', category, archived', ', $3, true', [' garden ']);
+    const other = (await as(U.eve, `insert into tasks (household_id, title, category) values ($1,'Theirs','Garden') returning id`, [B]))[0].id;
+    await fails(U.kid, `select rename_task_category($1,'Garden','Yard')`, [A]);
+    await fails(U.eve, `select rename_task_category($1,'Garden','Yard')`, [A]);
+    await fails(U.alice, `select rename_task_category($1,'Garden','  ')`, [A]);
+    await fails(U.alice, `select rename_task_category($1,'Garden',$2)`, [A, 'x'.repeat(41)]);
+    const n = (await as(U.bob, `select rename_task_category($1,'GARDEN','Yard') as n`, [A]))[0].n;
+    expect(n).toBe(2);
+    const cats = await admin<{ id: string; category: string }>('select id, category from tasks where id = any($1)', [[t1, t2, other]]);
+    expect(Object.fromEntries(cats.map((c) => [c.id, c.category]))).toEqual({ [t1]: 'Yard', [t2]: 'Yard', [other]: 'Garden' });
+  });
+});
