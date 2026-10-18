@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { must } from '@/lib/api';
 import { EventForm } from '@/components/EventForm';
+import { TaskFilterChips, matchesTaskFilter } from '@/components/TaskFilter';
 import { OccRow } from '@/components/OccRow';
 import { addDays, DAY_NAMES, fmtDate, fmtDateTime, iso, localToTs, parseISO, startOfMonthGrid, today } from '@/lib/dates';
 import { useBlockSitter } from '@/lib/guards';
@@ -26,7 +27,9 @@ export default function CalendarPage() {
 
   const gridStart = startOfMonthGrid(month);
   const gridEnd = addDays(gridStart, 41);
-  const { rows, loading } = useOccurrences(gridStart, gridEnd);
+  const { rows: allRows, loading } = useOccurrences(gridStart, gridEnd);
+  const [filter, setFilter] = useState('all');
+  const rows = useMemo(() => allRows.filter((r) => matchesTaskFilter(r.task, filter)), [allRows, filter]);
 
   // The hub only keeps recent events; the calendar loads whatever month is on screen.
   useEffect(() => {
@@ -67,6 +70,7 @@ export default function CalendarPage() {
   return (
     <>
       <div className="topbar"><h1 className="page-title">Calendar</h1></div>
+      <TaskFilterChips value={filter} onChange={setFilter} />
       <div className="cal-head">
         <button className="btn small" onClick={() => shift(-1)} aria-label="Previous month">‹</button>
         <h2>{parseISO(month).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</h2>

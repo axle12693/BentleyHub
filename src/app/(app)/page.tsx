@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { OccRow } from '@/components/OccRow';
+import { TaskFilterChips, matchesTaskFilter } from '@/components/TaskFilter';
 import { Avatar } from '@/components/ui';
 import { addDays, fmtDate, fmtDateTime, greeting, tsToDate, today } from '@/lib/dates';
 import { useHub } from '@/lib/hub';
@@ -16,7 +17,9 @@ export default function Home() {
 function FamilyHome() {
   const { me, household, members, events, rewards, balances, redemptions, isAdult } = useHub();
   const t = today();
-  const { rows, loading } = useOccurrences(addDays(t, -30), t);
+  const { rows: allRows, loading } = useOccurrences(addDays(t, -30), t);
+  const [filter, setFilter] = useState('all');
+  const rows = useMemo(() => allRows.filter((r) => matchesTaskFilter(r.task, filter)), [allRows, filter]);
 
   const { overdue, morning, evening, other, done } = useMemo(() => {
     const todays = rows.filter((r) => r.due_date === t);
@@ -42,7 +45,8 @@ function FamilyHome() {
     return groups.sort((a, b) => a.occ.due_date.localeCompare(b.occ.due_date) || byOccTime(a.occ, b.occ));
   }, [overdue]);
 
-  const todays = rows.filter((r) => r.due_date === t);
+  // Summary tiles are household totals, so they ignore the chip filter.
+  const todays = allRows.filter((r) => r.due_date === t);
   const left = todays.filter((r) => r.status === 'pending').length;
   const petDue = todays.filter((r) => r.status === 'pending' && r.task.pet_id).length;
   const todaysEvents = events.filter((e) => tsToDate(e.starts_at) === t);
@@ -85,6 +89,8 @@ function FamilyHome() {
           ))}
         </>
       )}
+
+      <TaskFilterChips value={filter} onChange={setFilter} />
 
       {overdueGroups.length > 0 && (
         <>

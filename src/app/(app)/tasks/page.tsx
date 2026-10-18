@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { TaskFilterChips, matchesTaskFilter } from '@/components/TaskFilter';
 import { TaskForm } from '@/components/TaskForm';
 import { Avatar } from '@/components/ui';
 import { canonicalCategory } from '@/lib/categories';
@@ -12,15 +13,12 @@ import type { Task } from '@/lib/types';
 
 export default function TasksPage() {
   const blocked = useBlockSitter();
-  const { tasks, family, pets, isAdult, memberById } = useHub();
+  const { tasks, pets, isAdult, memberById } = useHub();
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
   const [filter, setFilter] = useState<string>('all');
 
   const filtered = useMemo(
-    () =>
-      tasks.filter((t) =>
-        filter === 'all' ? true : filter === 'open' ? !t.assignee_member_id : filter === 'pets' ? !!t.pet_id : t.assignee_member_id === filter,
-      ),
+    () => tasks.filter((t) => matchesTaskFilter(t, filter)),
     [tasks, filter],
   );
   const groups = useMemo(() => {
@@ -38,14 +36,7 @@ export default function TasksPage() {
   return (
     <>
       <div className="topbar"><h1 className="page-title">Tasks & routines</h1></div>
-      <div className="chips" style={{ marginBottom: 6 }}>
-        <button className={`chip ${filter === 'all' ? 'on' : ''}`} onClick={() => setFilter('all')}>All</button>
-        <button className={`chip ${filter === 'open' ? 'on' : ''}`} onClick={() => setFilter('open')}>Open (anyone)</button>
-        <button className={`chip ${filter === 'pets' ? 'on' : ''}`} onClick={() => setFilter('pets')}>🐾 Pets</button>
-        {family.map((m) => (
-          <button key={m.id} className={`chip ${filter === m.id ? 'on' : ''}`} onClick={() => setFilter(m.id)}>{m.display_name}</button>
-        ))}
-      </div>
+      <TaskFilterChips value={filter} onChange={setFilter} />
 
       {tasks.length === 0 && (
         <div className="card empty">
