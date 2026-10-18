@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { TaskForm } from '@/components/TaskForm';
 import { Avatar } from '@/components/ui';
+import { canonicalCategory } from '@/lib/categories';
 import { fmtTime } from '@/lib/dates';
 import { useBlockSitter } from '@/lib/guards';
 import { useHub } from '@/lib/hub';
@@ -24,12 +25,13 @@ export default function TasksPage() {
   );
   const groups = useMemo(() => {
     const g = new Map<string, Task[]>();
+    const names = tasks.map((t) => t.category);
     for (const t of filtered) {
-      const key = t.routine ? (t.routine === 'morning' ? '🌅 Morning routine' : '🌙 Evening routine') : t.category;
+      const key = t.routine ? (t.routine === 'morning' ? '🌅 Morning routine' : '🌙 Evening routine') : canonicalCategory(t.category, names);
       g.set(key, [...(g.get(key) ?? []), t]);
     }
     return [...g.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [filtered]);
+  }, [filtered, tasks]);
 
   if (blocked) return null;
 

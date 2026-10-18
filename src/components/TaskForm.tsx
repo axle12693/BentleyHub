@@ -5,15 +5,16 @@ import { patchRow, saveRow } from '@/lib/api';
 import { DAY_LETTERS, FULL_DAY_NAMES, today } from '@/lib/dates';
 import { useHub } from '@/lib/hub';
 import type { Recurrence, Task } from '@/lib/types';
+import { DEFAULT_CATEGORIES, canonicalCategory, uniqueCategories } from '@/lib/categories';
 import { useSubmit } from '@/lib/useSubmit';
 import { FormError, Modal, SegControl } from './ui';
 
-const CATEGORIES = ['Chores', 'Animal care', 'Kitchen', 'Laundry', 'Outdoors', 'Kids', 'Errands', 'Other'];
+const NEW = '__new__';
 
 type RecType = Recurrence['type'];
 
 export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPetId?: string; onClose: () => void }) {
-  const { household, family, pets, reload } = useHub();
+  const { household, family, pets, tasks, reload } = useHub();
   const r = task?.recurrence;
   const [title, setTitle] = useState(task?.title ?? '');
   const [category, setCategory] = useState(task?.category ?? (presetPetId ? 'Animal care' : 'Chores'));
@@ -31,7 +32,11 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
   const [start, setStart] = useState(task?.start_date ?? today());
   const [end, setEnd] = useState(task?.end_date ?? '');
   const [guest, setGuest] = useState(task?.guest_visible ?? !!presetPetId);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
   const { busy, error, setError, run } = useSubmit();
+  const categoryOptions = uniqueCategories([...DEFAULT_CATEGORIES, ...tasks.map((t) => t.category), task?.category ?? '', category]);
+  const selectedCategory = canonicalCategory(category, categoryOptions);
 
   function recurrence(): Recurrence {
     if (recType === 'weekdays') return { type: 'weekdays', days: [...days].sort() };
@@ -43,9 +48,15 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
     e.preventDefault();
     if (recType === 'weekdays' && days.length === 0) return setError('Pick at least one day.');
     if (recType !== 'once' && end && end < start) return setError('The end date is before the start date.');
+    let finalCategory = selectedCategory;
+    if (adding) {
+      const typed = newName.trim().replace(/\s+/g, ' ');
+      if (!typed) return setError('Enter a name for the new category, or pick an existing one.');
+      finalCategory = canonicalCategory(typed, categoryOptions);
+    }
     const row = {
       title: title.trim(),
-      category: category.trim() || 'Chores',
+      category: finalCategory || 'Chores',
       routine: routine || null,
       assignee_member_id: assignee || null,
       pet_id: petId || null,
@@ -162,8 +173,31 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
         <div className="two">
           <div>
             <label>Category</label>
-            <input list="cats" value={category} onChange={(e) => setCategory(e.target.value)} />
-            <datalist id="cats">{CATEGORIES.map((c) => <option key={c} value={c} />)}</datalist>
+            <select
+              value={adding ? NEW : selectedCategory}
+              onChange={(e) => {
+                if (e.target.value === NEW) {
+                  setAdding(true);
+                } else {
+                  setAdding(false);
+                  setNewName('');
+                  setCategory(e.target.value);
+                }
+              }}
+            >
+              {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+              <option value={NEW}>＋ Add new category…</option>
+            </select>
+            {adding && (
+              <input
+                autoFocus
+                style={{ marginTop: 6 }}
+                value={newName}
+                maxLength={40}
+                placeholder="New category name"
+                onChange={(e) => setNewName(e.target.value)}
+              />
+            )}
           </div>
           <div>
             <label>Routine</label>
