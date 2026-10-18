@@ -24,8 +24,16 @@ export function OccRow({ occ, showDate, missed = 0 }: { occ: OccWithTask; showDa
   const pet = pets.find((p) => p.id === t.pet_id);
   const completer = memberById(occ.completed_by);
   const overdue = !done && !covered && (occ.due_date < today() || (occ.due_date === today() && !!t.due_time && t.due_time.slice(0, 5) < hhmm(new Date())));
-  const lockedForMe = me.role === 'child' && !!t.assignee_member_id && t.assignee_member_id !== me.id;
+  const assignedToOther = !!t.assignee_member_id && t.assignee_member_id !== me.id;
+  const lockedForMe = me.role === 'child' && assignedToOther;
   const canToggle = !busy && !covered && (done ? isAdult : !lockedForMe);
+
+  /** Adults get a heads-up before completing a task assigned to someone else. */
+  function confirmNotMine() {
+    if (isSitter || !assignedToOther) return true;
+    const who = assignee ? assignee.display_name : 'someone else';
+    return confirm(`This task is assigned to ${who}, not you. Mark it done anyway?`);
+  }
 
   async function complete(withNote?: string) {
     setBusy(true);
@@ -58,7 +66,7 @@ export function OccRow({ occ, showDate, missed = 0 }: { occ: OccWithTask; showDa
           className={`check ${done ? 'on' : ''}`}
           disabled={!canToggle}
           aria-label={done ? `Undo ${t.title}` : `Complete ${t.title}`}
-          onClick={() => (done ? undo() : complete())}
+          onClick={() => (done ? undo() : confirmNotMine() && complete())}
         >
           {done ? '✓' : ''}
         </button>
@@ -88,7 +96,7 @@ export function OccRow({ occ, showDate, missed = 0 }: { occ: OccWithTask; showDa
         </div>
         {!isSitter && t.points > 0 && t.points_eligible && <span className="pill">+{t.points}</span>}
         {!done && !covered && (t.guest_visible || isSitter) && (
-          <button className="btn small ghost" disabled={busy} onClick={() => setNoteOpen(true)} aria-label="Complete with a note">
+          <button className="btn small ghost" disabled={busy} onClick={() => confirmNotMine() && setNoteOpen(true)} aria-label="Complete with a note">
             📝
           </button>
         )}
