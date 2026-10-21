@@ -452,6 +452,42 @@ describe('overdue handling (migration 0006)', () => {
     expect((await admin(`select status from occurrences where task_id=$1 order by due_date`, [t])).map((x: any) => x.status))
       .toEqual(['done', 'covered']);
   });
+
+  it("'catch_up' honours the caller's local date (p_today) and clamps it", async () => {
+    const t = await newTask(U.alice, 'Catch up p_today', ', overdue_mode', `, 'catch_up'`);
+    await admin(`update tasks set start_date = current_date - 3 where id=$1`, [t]);
+    const occs = await past(t);
+    // Caller whose local date is still yesterday: today's copy stays open.
+    const r = await as(U.alice, `select complete_occurrence($1, null, current_date - 1) as r`, [occs[1].id]); // day -2
+    expect(r[0].r).toMatchObject({ covered: 2 }); // day -3 and day -1
+    const statuses = async () => (await admin(`select status from occurrences where task_id=$1 order by due_date`, [t])).map((x: any) => x.status);
+    expect(await statuses()).toEqual(['covered', 'done', 'covered', 'pending']);
+    await as(U.alice, `select uncomplete_occurrence($1)`, [occs[1].id]);
+    // A far-future p_today is clamped to current_date + 1: nothing beyond today exists here, so only today is settled.
+    const r2 = await as(U.alice, `select complete_occurrence($1, null, current_date + 30) as r`, [occs[2].id]); // day -1
+    expect(r2[0].r).toMatchObject({ covered: 3 });
+    expect(await statuses()).toEqual(['covered', 'covered', 'done', 'covered']);
+  });
+
+  it("'catch_up' completing a future-dated occurrence settles everything pending up to it", async () => {
+    const t = await newTask(U.alice, 'Catch up future', ', overdue_mode', `, 'catch_up'`);
+    await admin(`update tasks set start_date = current_date - 1 where id=$1`, [t]);
+    await as(U.alice, `select ensure_occurrences($1, current_date - 1, current_date + 2)`, [A]);
+    const [future] = await admin<{ id: string }>(`select id from occurrences where task_id=$1 and due_date = current_date + 2`, [t]);
+    await as(U.alice, `select complete_occurrence($1)`, [future.id]);
+    expect((await admin(`select status from occurrences where task_id=$1 order by due_date`, [t])).map((x: any) => x.status))
+      .toEqual(['covered', 'covered', 'covered', 'done']);
+  });
+
+  it('schedule edit purges pending rows from 2 days back but keeps older and settled ones', async () => {
+    const t = await newTask(U.alice, 'Purge window');
+    await admin(`update tasks set start_date = current_date - 3 where id=$1`, [t]);
+    const occs = await past(t); // days -3..0
+    await as(U.alice, `select complete_occurrence($1)`, [occs[1].id]); // day -2 done
+    await admin(`update tasks set end_date = current_date + 30 where id=$1`, [t]);
+    expect((await admin(`select status from occurrences where task_id=$1 order by due_date`, [t])).map((x: any) => x.status))
+      .toEqual(['pending', 'done']); // day -3 kept; day -2 settled; days -1 and 0 purged
+  });
 });
 
 describe('rename_task_category', () => {

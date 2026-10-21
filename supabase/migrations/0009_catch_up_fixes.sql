@@ -94,6 +94,7 @@ begin
      or new.start_date is distinct from old.start_date
      or new.end_date is distinct from old.end_date
      or (new.archived and not old.archived) then
+    -- 2 days back, not 1: occurrences carry the creator's local date, which can trail or lead UTC current_date by a day.
     delete from occurrences
     where task_id = new.id and status = 'pending'
       and (due_date >= current_date - 2 or new.archived or not task_due_on(new, due_date));
