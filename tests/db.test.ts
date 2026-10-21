@@ -432,14 +432,25 @@ describe('overdue handling (migration 0006)', () => {
     const occs = await past(t);
     const before = await balance(mAlice);
     const r = await as(U.alice, `select complete_occurrence($1) as r`, [occs[2].id]); // completes day -1
-    expect(r[0].r).toMatchObject({ points: 10, covered: 2 });
+    expect(r[0].r).toMatchObject({ points: 10, covered: 3 });
     const statuses = async () => (await admin(`select status from occurrences where task_id=$1 order by due_date`, [t])).map((x: any) => x.status);
-    expect(await statuses()).toEqual(['covered', 'covered', 'done', 'pending']); // today stays open
+    expect(await statuses()).toEqual(['covered', 'covered', 'done', 'covered']); // today is settled too
     expect(await balance(mAlice)).toBe(before + 10);
     await fails(U.alice, `select complete_occurrence($1)`, [occs[0].id]); // already caught up
     await as(U.alice, `select uncomplete_occurrence($1)`, [occs[2].id]);
     expect(await statuses()).toEqual(['pending', 'pending', 'pending', 'pending']);
     expect(await balance(mAlice)).toBe(before);
+  });
+
+  it("'catch_up' does not back-fill never-loaded past days after a later completion", async () => {
+    const t = await newTask(U.alice, 'Catch up backfill', ', overdue_mode', `, 'catch_up'`);
+    await admin(`update tasks set start_date = current_date - 3 where id=$1`, [t]);
+    await as(U.alice, `select ensure_occurrences($1, current_date - 1, current_date)`, [A]);
+    const [yesterday] = await admin<{ id: string }>(`select id from occurrences where task_id=$1 and due_date = current_date - 1`, [t]);
+    await as(U.alice, `select complete_occurrence($1)`, [yesterday.id]);
+    await as(U.alice, `select ensure_occurrences($1, current_date - 3, current_date)`, [A]); // older range loaded later
+    expect((await admin(`select status from occurrences where task_id=$1 order by due_date`, [t])).map((x: any) => x.status))
+      .toEqual(['done', 'covered']);
   });
 });
 

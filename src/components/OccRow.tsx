@@ -41,6 +41,7 @@ export function OccRow({ occ, showDate, missed = 0 }: { occ: OccWithTask; showDa
       const r = await rpc<{ points: number; family_bonus: number; covered: number }>('complete_occurrence', {
         p_occurrence: occ.id,
         p_note: withNote ?? null,
+        p_today: today(),
       });
       setExpect('done');
       toast(r.points > 0 ? `+${r.points} points! 🎉` : r.covered > 0 ? `Done ✓ · caught up ${r.covered} missed` : 'Done ✓');
