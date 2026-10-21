@@ -479,6 +479,33 @@ describe('overdue handling (migration 0006)', () => {
       .toEqual(['covered', 'covered', 'covered', 'done']);
   });
 
+  it('reset_task_overdue clears days before today without points, keeps today, and survives back-fill', async () => {
+    const t = await newTask(U.alice, 'Reset overdue');
+    await admin(`update tasks set start_date = current_date - 3 where id=$1`, [t]);
+    const occs = await past(t); // days -3..0
+    const before = await balance(mAlice);
+    await fails(U.kid, `select reset_task_overdue($1)`, [t]);
+    await fails(U.sitter, `select reset_task_overdue($1)`, [t]);
+    expect((await as(U.alice, `select reset_task_overdue($1, current_date) as n`, [t]))[0].n).toBe(3);
+    const cutoff = async () => (await admin(`select reset_through from tasks where id=$1`, [t]))[0].reset_through;
+    const first = await cutoff();
+    expect((await as(U.alice, `select reset_task_overdue($1, current_date - 5) as n`, [t]))[0].n).toBe(0); // repeat is a no-op
+    expect(await cutoff()).toEqual(first); // and the cutoff never moves backwards
+    const statuses = async () => (await admin(`select status from occurrences where task_id=$1 order by due_date`, [t])).map((x: any) => x.status);
+    expect(await statuses()).toEqual(['covered', 'covered', 'covered', 'pending']);
+    expect(await balance(mAlice)).toBe(before);
+    await fails(U.alice, `select complete_occurrence($1)`, [occs[0].id]);
+    await as(U.alice, `select ensure_occurrences($1, current_date - 10, current_date)`, [A]); // no back-fill
+    expect(await statuses()).toEqual(['covered', 'covered', 'covered', 'pending']);
+    await fails(U.alice, `select uncomplete_occurrence($1)`, [occs[3].id]); // not complete, so nothing to undo or revive
+    expect(await statuses()).toEqual(['covered', 'covered', 'covered', 'pending']);
+    // a schedule edit pulls the cutoff back to the purge window so days it newly makes due aren't suppressed
+    await admin(`update tasks set end_date = current_date + 30 where id=$1`, [t]);
+    expect((await admin(`select (current_date - reset_through) as d from tasks where id=$1`, [t]))[0].d).toBe(3);
+    await as(U.alice, `select ensure_occurrences($1, current_date - 10, current_date)`, [A]);
+    expect(await statuses()).toEqual(['covered', 'covered', 'covered', 'pending']);
+  });
+
   it('schedule edit purges pending rows from 2 days back but keeps older and settled ones', async () => {
     const t = await newTask(U.alice, 'Purge window');
     await admin(`update tasks set start_date = current_date - 3 where id=$1`, [t]);

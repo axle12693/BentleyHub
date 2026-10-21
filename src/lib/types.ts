@@ -52,6 +52,8 @@ export type Task = {
   end_date: string | null;
   guest_visible: boolean;
   archived: boolean;
+  /** Set by "Clear overdue": days up to here are never re-created. */
+  reset_through: string | null;
 };
 
 export type Occurrence = {

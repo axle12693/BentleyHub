@@ -45,6 +45,14 @@ function FamilyHome() {
     return groups.sort((a, b) => a.occ.due_date.localeCompare(b.occ.due_date) || byOccTime(a.occ, b.occ));
   }, [overdue]);
 
+  // "Clear" wipes every overdue day of a task, so only its first row gets the button.
+  const resettable = useMemo(() => {
+    const seen = new Set<string>();
+    const ids = new Set<string>();
+    for (const { occ } of overdueGroups) if (!seen.has(occ.task_id)) { seen.add(occ.task_id); ids.add(occ.id); }
+    return ids;
+  }, [overdueGroups]);
+
   // Summary tiles are household totals, so they ignore the chip filter.
   const todays = allRows.filter((r) => r.due_date === t);
   const left = todays.filter((r) => r.status === 'pending').length;
@@ -95,7 +103,7 @@ function FamilyHome() {
       {overdueGroups.length > 0 && (
         <>
           <div className="section-title"><h2>⚠️ Still to do from earlier</h2></div>
-          {overdueGroups.map(({ occ, missed }) => <OccRow key={occ.id} occ={occ} showDate missed={missed} />)}
+          {overdueGroups.map(({ occ, missed }) => <OccRow key={occ.id} occ={occ} showDate missed={missed} canReset={resettable.has(occ.id)} />)}
         </>
       )}
 

@@ -8,7 +8,7 @@ import type { OccWithTask } from '@/lib/types';
 import { attempt, Avatar, Modal, toast } from './ui';
 
 /** One scheduled task occurrence with a check button. */
-export function OccRow({ occ, showDate, missed = 0 }: { occ: OccWithTask; showDate?: boolean; missed?: number }) {
+export function OccRow({ occ, showDate, missed = 0, canReset }: { occ: OccWithTask; showDate?: boolean; missed?: number; canReset?: boolean }) {
   const { me, isAdult, isSitter, pets, memberById, reload } = useHub();
   const [busy, setBusy] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
@@ -49,6 +49,17 @@ export function OccRow({ occ, showDate, missed = 0 }: { occ: OccWithTask; showDa
     await reload(); // refresh either way (e.g. someone else got there first)
     setBusy(false);
     return ok;
+  }
+
+  async function resetOverdue() {
+    if (!confirm(`Clear all overdue "${t.title}" up to today? No points will be earned.`)) return;
+    setBusy(true);
+    await attempt(async () => {
+      const n = await rpc<number>('reset_task_overdue', { p_task: t.id, p_today: today() });
+      toast(`Cleared ${n} overdue — fresh start`);
+    });
+    await reload();
+    setBusy(false);
   }
 
   async function undo() {
@@ -96,6 +107,11 @@ export function OccRow({ occ, showDate, missed = 0 }: { occ: OccWithTask; showDa
           {serverDone && occ.note && <div className="task-meta">📝 {occ.note}</div>}
         </div>
         {!isSitter && t.points > 0 && t.points_eligible && <span className="pill">+{t.points}</span>}
+        {canReset && isAdult && (
+          <button className="btn small ghost" disabled={busy} onClick={resetOverdue} aria-label={`Clear overdue ${t.title} without points`}>
+            Clear
+          </button>
+        )}
         {!done && !covered && (t.guest_visible || isSitter) && (
           <button className="btn small ghost" disabled={busy} onClick={() => confirmNotMine() && setNoteOpen(true)} aria-label="Complete with a note">
             📝
