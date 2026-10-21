@@ -95,6 +95,11 @@ export function OccRow({ occ, showDate, missed = 0, canReset }: { occ: OccWithTa
               </span>
             )}
             {overdue && <span className="pill red">Overdue</span>}
+            {canReset && isAdult && (
+              <button className="linkbtn" disabled={busy} onClick={resetOverdue} aria-label={`Clear overdue ${t.title} without points`}>
+                Clear overdue
+              </button>
+            )}
             {covered && <span className="pill gray">Caught up</span>}
             {serverDone && completer && (
               <span>
@@ -107,11 +112,6 @@ export function OccRow({ occ, showDate, missed = 0, canReset }: { occ: OccWithTa
           {serverDone && occ.note && <div className="task-meta">📝 {occ.note}</div>}
         </div>
         {!isSitter && t.points > 0 && t.points_eligible && <span className="pill">+{t.points}</span>}
-        {canReset && isAdult && (
-          <button className="btn small ghost" disabled={busy} onClick={resetOverdue} aria-label={`Clear overdue ${t.title} without points`}>
-            Clear
-          </button>
-        )}
         {!done && !covered && (t.guest_visible || isSitter) && (
           <button className="btn small ghost" disabled={busy} onClick={() => confirmNotMine() && setNoteOpen(true)} aria-label="Complete with a note">
             📝

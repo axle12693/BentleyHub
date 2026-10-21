@@ -117,6 +117,8 @@ code { background: var(--cream-2); padding: 1px 6px; border-radius: 6px; font-si
 .btn.danger { color: var(--danger); border-color: #e2b8ab; }
 .btn.small { padding: 6px 12px; font-size: 0.85rem; }
 .btn.ghost { background: transparent; }
+.linkbtn { background: none; border: 0; padding: 6px 0; margin: -6px 0; font: inherit; color: var(--muted); text-decoration: underline; cursor: pointer; }
+.linkbtn:disabled { opacity: 0.5; cursor: default; }
 .btn:disabled { opacity: 0.55; cursor: default; }
 .btn.block { width: 100%; }
 label { display: block; font-size: 0.85rem; font-weight: 650; color: var(--muted); margin: 12px 0 4px; }

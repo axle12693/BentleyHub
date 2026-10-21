@@ -45,7 +45,7 @@ function FamilyHome() {
     return groups.sort((a, b) => a.occ.due_date.localeCompare(b.occ.due_date) || byOccTime(a.occ, b.occ));
   }, [overdue]);
 
-  // "Clear" wipes every overdue day of a task, so only its first row gets the button.
+  // "Clear overdue" wipes every overdue day of a task, so only its first row gets the button.
   const resettable = useMemo(() => {
     const seen = new Set<string>();
     const ids = new Set<string>();
