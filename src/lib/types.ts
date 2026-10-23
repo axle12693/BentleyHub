@@ -56,6 +56,11 @@ export type Task = {
   archived: boolean;
   /** Set by "Clear overdue": days up to here are never re-created. */
   reset_through: string | null;
+  /** While in the future, the task and all its occurrences are hidden. */
+  hidden_until: string | null;
+  /** The hider's local dates the hide started and ends on (skipped days in between); set together with hidden_until. */
+  hidden_from_day: string | null;
+  hidden_until_day: string | null;
 };
 
 export type Occurrence = {

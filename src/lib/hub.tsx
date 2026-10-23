@@ -6,6 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { Splash, SetupNeeded } from '@/components/Splash';
 import { errMsg, must, myMemberships } from './api';
 import { fmtDateTime } from './dates';
+import { useHiddenClock } from './useHiddenClock';
 import { getActiveHousehold, loginUrl, setActiveHousehold, useSignOut } from './auth';
 import { isConfigured, supabase } from './supabase';
 import type { CalEvent, Household, LedgerRow, Member, Pet, Redemption, Reward, Task } from './types';
@@ -33,10 +34,14 @@ type Hub = HubData & {
   memberships: Membership[];
   /** Bumps whenever any synced table changes — pages depend on it to refetch. */
   rev: number;
+  /** Not a live clock: only advances when a task's hide runs out, so hidden tasks come back without a reload. Use with isHidden(). */
+  hiddenClock: number;
   reload: () => Promise<void>;
   switchHousehold: (id: string) => void;
   memberById: (id: string | null | undefined) => Member | undefined;
 };
+
+const NO_TASKS: Task[] = [];
 
 const Ctx = createContext<Hub | null>(null);
 export const useHub = () => {
@@ -96,6 +101,7 @@ export function HubProvider({ children }: { children: ReactNode }) {
   const [rev, setRev] = useState(0);
   const activeRef = useRef<string | null>(null);
   const loadSeq = useRef(0);
+  const hiddenClock = useHiddenClock(data?.tasks ?? NO_TASKS);
 
   // Only the most recently started load may apply, so a slow stale response can't overwrite fresh data.
   const pull = useCallback(async (hid: string, uid: string) => {
@@ -259,10 +265,10 @@ export function HubProvider({ children }: { children: ReactNode }) {
     if (!data) return null;
     const byId = new Map(data.members.map((m) => [m.id, m]));
     return {
-      ...data, userId, memberships, rev, reload, switchHousehold,
+      ...data, userId, memberships, rev, hiddenClock, reload, switchHousehold,
       memberById: (id) => (id ? byId.get(id) : undefined),
     };
-  }, [data, userId, memberships, rev, reload, switchHousehold]);
+  }, [data, userId, memberships, rev, hiddenClock, reload, switchHousehold]);
 
   if (!isConfigured) return <SetupNeeded />;
   if (phase === 'error')

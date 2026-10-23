@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { PetForm } from '@/components/PetForm';
+import { HiddenPill } from '@/components/HiddenPill';
 import { TaskForm } from '@/components/TaskForm';
 import { attempt, speciesEmoji } from '@/components/ui';
 import { addPetNote, listPetNotes, rpc } from '@/lib/api';
 import { fmtDateTime, fmtTime } from '@/lib/dates';
+import { isHidden } from '@/lib/hidden';
 import { useHub } from '@/lib/hub';
 import { byDueTime } from '@/lib/occurrences';
 import { describeRecurrence } from '@/lib/recurrence';
@@ -74,12 +76,12 @@ export default function PetsPage() {
 }
 
 function PetCard({ pet, notes, onEdit }: { pet: Pet; notes: PetNote[]; onEdit: () => void }) {
-  const { tasks, isAdult, me, memberById, household, reload } = useHub();
+  const { tasks, isAdult, me, memberById, household, reload, hiddenClock } = useHub();
   const [open, setOpen] = useState(false);
   const [taskEdit, setTaskEdit] = useState<Task | 'new' | null>(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
-  const petTasks = tasks.filter((t) => t.pet_id === pet.id).sort(byDueTime);
+  const petTasks = tasks.filter((t) => t.pet_id === pet.id && (isAdult || !isHidden(t, hiddenClock))).sort(byDueTime);
 
   async function addNote() {
     if (!note.trim()) return;
@@ -130,6 +132,7 @@ function PetCard({ pet, notes, onEdit }: { pet: Pet; notes: PetNote[]; onEdit: (
             >
               <div className="grow">
                 <b>{t.title}</b>
+                <HiddenPill task={t} style={{ marginLeft: 6 }} />
                 <div className="muted small">
                   {describeRecurrence(t.recurrence)}
                   {t.due_time ? ` · ${fmtTime(t.due_time)}` : ''}

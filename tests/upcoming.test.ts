@@ -30,6 +30,9 @@ describe('upcoming', () => {
     expect(maxLead([task({ visible_days_before: 99 })])).toBe(30);
     expect(maxLead([task({ visible_days_before: 9, archived: true })])).toBe(0);
     expect(maxLead([])).toBe(0);
+    const hidden = task({ visible_days_before: 9, hidden_until: new Date(2000).toISOString() });
+    expect(maxLead([hidden], 1000)).toBe(0); // hidden tasks don't extend the lookahead
+    expect(maxLead([hidden], 3000)).toBe(9);
   });
 });
 

@@ -5,6 +5,7 @@ import { rpc } from '@/lib/api';
 import { fmtDate, fmtDateTime, fmtTime, hhmm, today } from '@/lib/dates';
 import { useHub } from '@/lib/hub';
 import type { OccWithTask } from '@/lib/types';
+import { HideTaskModal } from './HideTaskModal';
 import { attempt, Avatar, Modal, toast } from './ui';
 
 /** One scheduled task occurrence with a check button. */
@@ -12,6 +13,7 @@ export function OccRow({ occ, showDate, missed = 0, canReset }: { occ: OccWithTa
   const { me, isAdult, isSitter, pets, memberById, reload } = useHub();
   const [busy, setBusy] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
+  const [hideOpen, setHideOpen] = useState(false);
   const [note, setNote] = useState('');
   const t = occ.task;
   // Show the result of our own action immediately; the server copy catches up after the refetch.
@@ -103,6 +105,11 @@ export function OccRow({ occ, showDate, missed = 0, canReset }: { occ: OccWithTa
                 Clear overdue
               </button>
             )}
+            {isAdult && !done && !covered && (
+              <button className="linkbtn" disabled={busy} onClick={() => setHideOpen(true)} aria-label={`Hide ${t.title}`}>
+                Hide task…
+              </button>
+            )}
             {covered && <span className="pill gray">Caught up</span>}
             {serverDone && completer && (
               <span>
@@ -121,6 +128,7 @@ export function OccRow({ occ, showDate, missed = 0, canReset }: { occ: OccWithTa
           </button>
         )}
       </div>
+      {hideOpen && <HideTaskModal task={t} onClose={() => setHideOpen(false)} />}
       {noteOpen && (
         <Modal title={t.title} onClose={() => setNoteOpen(false)}>
           <label>Add a note (optional)</label>

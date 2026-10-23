@@ -506,6 +506,109 @@ describe('overdue handling (migration 0006)', () => {
       .toEqual(['done', 'pending', 'pending', 'pending']);
   });
 
+  it('hide_task pauses a task by local days and keeps the earlier backlog', async () => {
+    const t = await newTask(U.alice, 'Hide me');
+    await admin(`update tasks set start_date = current_date - 2 where id=$1`, [t]);
+    await past(t); // days -2..0
+    const statuses = async () => (await admin(`select status from occurrences where task_id=$1 order by due_date`, [t])).map((x: any) => x.status);
+    const between = async () => (await admin(`select count(*)::int as n from occurrences where task_id=$1 and due_date > current_date and due_date < current_date + 3`, [t]))[0].n;
+    const inFuture = (h: number) => `now() + interval '${h} hours'`;
+    await fails(U.kid, `select hide_task($1, ${inFuture(5)}, current_date + 1, current_date)`, [t]);
+    await fails(U.sitter, `select hide_task($1, ${inFuture(5)}, current_date + 1, current_date)`, [t]);
+    await fails(U.alice, `select hide_task($1, now() - interval '1 hour', current_date, current_date)`, [t]); // must be future
+    // a few hours that stay within the caller's today leave every row alone (even if UTC has already rolled over)
+    await as(U.alice, `select hide_task($1, ${inFuture(3)}, current_date, current_date)`, [t]);
+    expect(await statuses()).toEqual(['pending', 'pending', 'pending']);
+    // hiding past today skips today with no points, but the overdue days stay overdue for when it returns
+    const before = await balance(mAlice);
+    await as(U.alice, `select hide_task($1, ${inFuture(72)}, current_date + 3, current_date)`, [t]);
+    expect(await statuses()).toEqual(['pending', 'pending', 'covered']);
+    expect(await balance(mAlice)).toBe(before);
+    // hidden future days are not generated, and stay skipped after the hide runs out
+    await as(U.alice, `select ensure_occurrences($1, current_date - 5, current_date + 5)`, [A]);
+    expect((await admin(`select due_date - current_date as d from occurrences where task_id=$1 order by due_date desc limit 1`, [t]))[0].d).toBe(5);
+    expect(await between()).toBe(0);
+    await admin(`update tasks set hidden_until = now() - interval '1 minute' where id=$1`, [t]);
+    await as(U.alice, `select ensure_occurrences($1, current_date - 5, current_date + 5)`, [A]);
+    expect(await between()).toBe(0);
+    // look-ahead rows already created for later hidden days are dropped, not left to come back overdue
+    await admin(`insert into occurrences (household_id, task_id, due_date) select household_id, id, current_date + 1 from tasks where id=$1`, [t]);
+    await as(U.alice, `select hide_task($1, ${inFuture(72)}, current_date + 3, current_date)`, [t]);
+    expect(await between()).toBe(0);
+    await fails(U.alice, `select hide_task($1, ${inFuture(72)}, current_date + 30, current_date)`, [t]); // day must match the timestamp
+    // a hidden task can't be completed, even by calling the server directly
+    const [hid] = await admin(`insert into occurrences (household_id, task_id, due_date) select household_id, id, current_date + 20 from tasks where id=$1 returning id`, [t]);
+    await expect(admin(`update occurrences set status='done' where id=$1`, [hid.id])).rejects.toThrow();
+    await admin(`delete from occurrences where id=$1`, [hid.id]);
+    // showing it again early brings the overdue days back and resumes generating from tomorrow
+    await as(U.alice, `select hide_task($1, null, null)`, [t]);
+    expect((await admin(`select hidden_until, hidden_from_day, hidden_until_day from tasks where id=$1`, [t]))[0]).toEqual({ hidden_until: null, hidden_from_day: null, hidden_until_day: null });
+    await as(U.alice, `select ensure_occurrences($1, current_date - 5, current_date + 5)`, [A]);
+    expect(await between()).toBe(2);
+    // today's row was skipped by the hide, so showing the task again gives it back
+    expect((await statuses()).slice(0, 3)).toEqual(['pending', 'pending', 'pending']);
+  });
+
+  it('hide columns can only be changed through hide_task', async () => {
+    const t = await newTask(U.alice, 'Guarded');
+    await fails(U.alice, `update tasks set hidden_until = now() + interval '1 hour', hidden_until_day = current_date where id=$1`, [t]);
+    await as(U.alice, `update tasks set title = 'Renamed' where id=$1`, [t]); // other edits are unaffected
+    await as(U.alice, `select hide_task($1, now() + interval '2 hours', current_date, current_date)`, [t]);
+  });
+
+  it('hide columns cannot be set on insert either', async () => {
+    await fails(U.alice, `insert into tasks (household_id, title, hidden_until, hidden_until_day) values ($1, 'Sneaky', now() + interval '1 hour', current_date)`, [A]);
+  });
+
+  it('shortening a hide gives back the day the longer hide skipped', async () => {
+    const t = await newTask(U.alice, 'Shorten me');
+    await past(t);
+    const today = async () => (await admin(`select status from occurrences where task_id=$1 and due_date=current_date`, [t]))[0].status;
+    await as(U.alice, `select hide_task($1, now() + interval '72 hours', current_date + 3, current_date)`, [t]);
+    expect(await today()).toBe('covered');
+    await as(U.alice, `select hide_task($1, now() + interval '2 hours', current_date, current_date)`, [t]);
+    expect(await today()).toBe('pending');
+    // a longer replacement still skips it
+    await as(U.alice, `select hide_task($1, now() + interval '72 hours', current_date + 3, current_date)`, [t]);
+    expect(await today()).toBe('covered');
+  });
+
+  it('showing a task again does not undo "Clear overdue" for today', async () => {
+    const t = await newTask(U.alice, 'Cleared then hidden');
+    await past(t);
+    await admin(`update occurrences set status='covered', covered_by=null where task_id=$1 and due_date=current_date`, [t]); // as reset_task_overdue does
+    await as(U.alice, `select hide_task($1, now() + interval '72 hours', current_date + 3, current_date)`, [t]);
+    await as(U.alice, `select hide_task($1, null, null, current_date)`, [t]);
+    expect((await admin(`select status from occurrences where task_id=$1 and due_date=current_date`, [t]))[0].status).toBe('covered');
+  });
+
+  it('hide_task rejects archived tasks', async () => {
+    const t = await newTask(U.alice, 'Archived');
+    await admin(`update tasks set archived = true where id=$1`, [t]);
+    await fails(U.alice, `select hide_task($1, now() + interval '2 hours', current_date, current_date)`, [t]);
+  });
+
+  it('a hide window that is over stays skipped across schedule edits and later hides', async () => {
+    const t = await newTask(U.alice, 'Hidden last week');
+    await admin(`update tasks set start_date = current_date - 5 where id=$1`, [t]);
+    // Simulate a hide covering days -3..-2 that has already run out.
+    await admin(`update tasks set hidden_until = now() - interval '1 hour', hidden_from_day = current_date - 3, hidden_until_day = current_date - 1 where id=$1`, [t]);
+    const days = async () => (await admin(`select due_date - current_date as d, status from occurrences where task_id=$1 order by due_date`, [t])).map((x: any) => `${x.d}:${x.status}`);
+    await as(U.alice, `select ensure_occurrences($1, current_date - 5, current_date)`, [A]);
+    expect(await days()).toEqual(['-5:pending', '-4:pending', '-1:pending', '0:pending']);
+    // a schedule edit purges pending rows from 2 days back; the window must still hold them back
+    await admin(`update tasks set start_date = current_date - 6 where id=$1`, [t]);
+    await as(U.alice, `select ensure_occurrences($1, current_date - 5, current_date)`, [A]);
+    expect((await days()).filter((x) => x.startsWith('-3') || x.startsWith('-2'))).toEqual([]);
+    // replacing the window stores its past days as covered, so they never come back
+    await as(U.alice, `select hide_task($1, null, null)`, [t]);
+    await as(U.alice, `select ensure_occurrences($1, current_date - 5, current_date)`, [A]);
+    expect((await days()).filter((x) => x.startsWith('-3') || x.startsWith('-2'))).toEqual(['-3:covered', '-2:covered']);
+    // a bad client can't stretch the window back over years
+    await as(U.alice, `select hide_task($1, now() + interval '72 hours', current_date + 3, current_date - 4000)`, [t]);
+    expect((await admin(`select current_date - hidden_from_day as d from tasks where id=$1`, [t]))[0].d).toBe(1);
+  });
+
   it('visible_days_before is limited to 1-30 and allowed on catch_up tasks', async () => {
     const t = await newTask(U.alice, 'Early visible', ', visible_days_before', ', 5');
     await expect(admin(`update tasks set visible_days_before = 0 where id=$1`, [t])).rejects.toThrow();

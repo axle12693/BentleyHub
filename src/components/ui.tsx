@@ -4,17 +4,34 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { errMsg } from '@/lib/api';
 import type { Member } from '@/lib/types';
 
+// Open modals: Escape closes only the top one (highest id), so a nested modal doesn't take its parent along.
+// Ids are handed out at first render, which visits a parent before its children, so nesting is right even when
+// both mount in the same commit (where child effects run first).
+const openModals: number[] = [];
+let nextModalId = 0;
+// Body scroll is locked by the first modal and restored by the last, whatever order they close in.
+let bodyOverflowBefore = '';
+
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  // Stable per mount; registered once because onClose is usually an inline function.
+  const [id] = useState(() => nextModalId++);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    document.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    if (openModals.length === 0) {
+      bodyOverflowBefore = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+    }
+    openModals.push(id);
     return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prev;
+      const i = openModals.indexOf(id);
+      if (i >= 0) openModals.splice(i, 1);
+      if (openModals.length === 0) document.body.style.overflow = bodyOverflowBefore;
     };
-  }, [onClose]);
+  }, [id]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && Math.max(...openModals) === id && onClose();
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose, id]);
   return (
     <div className="backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="sheet" role="dialog" aria-modal="true" aria-label={title}>

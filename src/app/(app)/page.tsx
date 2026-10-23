@@ -17,10 +17,10 @@ export default function Home() {
 }
 
 function FamilyHome() {
-  const { me, household, members, events, rewards, balances, redemptions, isAdult, tasks } = useHub();
+  const { me, household, members, events, rewards, balances, redemptions, isAdult, tasks, hiddenClock } = useHub();
   const t = today();
   // Look ahead far enough to catch tasks that are visible before their due date (capped, see MAX_VISIBLE_DAYS).
-  const lead = useMemo(() => maxLead(tasks), [tasks]);
+  const lead = useMemo(() => maxLead(tasks, hiddenClock), [tasks, hiddenClock]);
   const { rows: allRows, loading } = useOccurrences(addDays(t, -30), addDays(t, lead));
   const [filter, setFilter] = useState('all');
   const rows = useMemo(() => allRows.filter((r) => matchesTaskFilter(r.task, filter)), [allRows, filter]);
@@ -150,9 +150,9 @@ function FamilyHome() {
 }
 
 function SitterHome() {
-  const { me, household, pets, tasks } = useHub();
+  const { me, household, pets, tasks, hiddenClock } = useHub();
   const t = today();
-  const lead = useMemo(() => maxLead(tasks), [tasks]);
+  const lead = useMemo(() => maxLead(tasks, hiddenClock), [tasks, hiddenClock]);
   const { rows, loading } = useOccurrences(t, addDays(t, Math.max(2, lead)));
   const days = [t, addDays(t, 1), addDays(t, 2)];
   // Days already listed below are not repeated under "Coming up".

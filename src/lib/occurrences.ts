@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { errMsg, must, rpc } from './api';
+import { isHidden } from './hidden';
 import { useHub } from './hub';
 import { supabase } from './supabase';
 import type { Occurrence, OccWithTask, Task } from './types';
@@ -13,7 +14,7 @@ export const byOccTime = (a: OccWithTask, b: OccWithTask) => byDueTime(a.task, b
 
 /** Occurrences (with their tasks) between two dates, kept fresh via the hub's realtime revision. */
 export function useOccurrences(from: string, to: string) {
-  const { household, tasks, rev } = useHub();
+  const { household, tasks, rev, hiddenClock } = useHub();
   const [raw, setRaw] = useState<Occurrence[]>([]);
   const [loadedKey, setLoadedKey] = useState('');
   const [error, setError] = useState('');
@@ -41,13 +42,14 @@ export function useOccurrences(from: string, to: string) {
   }, [household.id, from, to, rev, loadKey]);
 
   // Joining with tasks is separate from fetching, so editing a task never re-queries occurrences.
+  // A hidden task comes back by itself when its hide runs out (the hub's clock ticks then).
   const rows = useMemo<OccWithTask[]>(() => {
     const byId = new Map(tasks.map((t) => [t.id, t]));
     return raw.flatMap((o) => {
       const task = byId.get(o.task_id);
-      return task ? [{ ...o, task }] : [];
+      return task && !isHidden(task, hiddenClock) ? [{ ...o, task }] : [];
     });
-  }, [raw, tasks]);
+  }, [raw, tasks, hiddenClock]);
 
   // "Loading" only when the range or household changed — not on every realtime refresh.
   return { rows, loading: loadedKey !== loadKey, error };

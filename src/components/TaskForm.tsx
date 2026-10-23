@@ -3,11 +3,14 @@
 import { useState } from 'react';
 import { patchRow, saveRow } from '@/lib/api';
 import { DAY_LETTERS, FULL_DAY_NAMES, today } from '@/lib/dates';
+import { isHidden } from '@/lib/hidden';
 import { useHub } from '@/lib/hub';
 import type { Recurrence, Task } from '@/lib/types';
 import { DEFAULT_CATEGORIES, DEFAULT_CATEGORY, PET_CATEGORY, MAX_CATEGORY_LENGTH, canonicalCategory, uniqueCategories } from '@/lib/categories';
 import { MAX_VISIBLE_DAYS } from '@/lib/upcoming';
+import { useLiveTask } from '@/lib/useLiveTask';
 import { useSubmit } from '@/lib/useSubmit';
+import { HideTaskModal } from './HideTaskModal';
 import { FormError, Modal, SegControl } from './ui';
 
 const NEW = '__new__';
@@ -15,7 +18,7 @@ const NEW = '__new__';
 type RecType = Recurrence['type'];
 
 export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPetId?: string; onClose: () => void }) {
-  const { household, family, pets, tasks, reload } = useHub();
+  const { household, family, pets, tasks, reload, hiddenClock } = useHub();
   const r = task?.recurrence;
   const [title, setTitle] = useState(task?.title ?? '');
   const [category, setCategory] = useState(() => {
@@ -43,6 +46,9 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
   const [early, setEarly] = useState(task?.visible_days_before != null);
   const [earlyDays, setEarlyDays] = useState(String(task?.visible_days_before ?? 3));
   const [guest, setGuest] = useState(task?.guest_visible ?? !!presetPetId);
+  const [hiding, setHiding] = useState(false);
+  // The prop is a snapshot; the hub copy reflects a hide made from this form.
+  const live = useLiveTask(task);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
   const { busy, error, setError, run } = useSubmit();
@@ -107,166 +113,173 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
   }
 
   return (
-    <Modal title={task ? 'Edit task' : 'New task'} onClose={onClose}>
-      <form onSubmit={save}>
-        <label>What needs doing?</label>
-        <input required autoFocus={!task} value={title} maxLength={120} placeholder="e.g. Take out the trash" onChange={(e) => setTitle(e.target.value)} />
+    <>
+      <Modal title={task ? 'Edit task' : 'New task'} onClose={onClose}>
+        <form onSubmit={save}>
+          <label>What needs doing?</label>
+          <input required autoFocus={!task} value={title} maxLength={120} placeholder="e.g. Take out the trash" onChange={(e) => setTitle(e.target.value)} />
 
-        <div className="two">
-          <div>
-            <label>Who</label>
-            <select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
-              <option value="">Anyone (first to finish)</option>
-              {family.map((m) => (
-                <option key={m.id} value={m.id}>{m.display_name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label>Points</label>
-            <input type="number" min={0} max={1000} value={points} onChange={(e) => setPoints(e.target.value)} />
-          </div>
-        </div>
-
-        <label>Repeats</label>
-        <SegControl
-          value={recType}
-          onChange={setRecType}
-          options={[['once', 'Once'], ['daily', 'Daily'], ['weekdays', 'Days'], ['interval', 'Every N']]}
-        />
-        {recType === 'weekdays' && (
-          <div className="daypick" style={{ marginTop: 10 }}>
-            {DAY_LETTERS.map((l, i) => (
-              <button
-                type="button"
-                key={i}
-                aria-label={FULL_DAY_NAMES[i]}
-                className={days.includes(i) ? 'on' : ''}
-                onClick={() => setDays((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i]))}
-              >
-                {l}
-              </button>
-            ))}
-          </div>
-        )}
-        {recType === 'interval' && (
-          <div className="row" style={{ marginTop: 10 }}>
-            <span>Every</span>
-            <input style={{ width: 80 }} type="number" min={1} max={365} value={every} onChange={(e) => setEvery(e.target.value)} />
-            <span>days</span>
-          </div>
-        )}
-
-        {recType !== 'once' && (
-          <>
-            <label>If it gets missed</label>
-            <SegControl
-              value={overdueMode}
-              onChange={setOverdueMode}
-              options={[['each', 'Each one counts'], ['catch_up', 'Do it once']]}
-            />
-            <div className="muted small" style={{ marginTop: 6 }}>
-              {overdueMode === 'each'
-                ? 'Every missed day stays on the list. Each one must be done and earns points.'
-                : 'Doing it once catches up all the missed days. Only that one earns points.'}
+          <div className="two">
+            <div>
+              <label>Who</label>
+              <select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
+                <option value="">Anyone (first to finish)</option>
+                {family.map((m) => (
+                  <option key={m.id} value={m.id}>{m.display_name}</option>
+                ))}
+              </select>
             </div>
-          </>
-        )}
-
-        <div className="two">
-          <div>
-            <label>{recType === 'once' ? 'Date' : 'Starts'}</label>
-            <input type="date" required value={start} onChange={(e) => setStart(e.target.value)} />
+            <div>
+              <label>Points</label>
+              <input type="number" min={0} max={1000} value={points} onChange={(e) => setPoints(e.target.value)} />
+            </div>
           </div>
-          <div>
-            <label>Time (optional)</label>
-            <input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} />
-          </div>
-        </div>
-        {recType !== 'once' && (
-          <>
-            <label>Ends (optional)</label>
-            <input type="date" value={end} min={start} onChange={(e) => setEnd(e.target.value)} />
-          </>
-        )}
 
-        <div className="check-row">
-          <input id="visible-early" type="checkbox" checked={early} onChange={(e) => setEarly(e.target.checked)} />
-          <label htmlFor="visible-early">Visible before due date?</label>
-        </div>
-        {early && (
-          <div className="row" style={{ marginTop: 10 }}>
-            <span>How long before?</span>
-            <input style={{ width: 80 }} type="number" step={1} min={1} max={MAX_VISIBLE_DAYS} value={earlyDays} onChange={(e) => setEarlyDays(e.target.value)} />
-            <span>days</span>
-          </div>
-        )}
+          <label>Repeats</label>
+          <SegControl
+            value={recType}
+            onChange={setRecType}
+            options={[['once', 'Once'], ['daily', 'Daily'], ['weekdays', 'Days'], ['interval', 'Every N']]}
+          />
+          {recType === 'weekdays' && (
+            <div className="daypick" style={{ marginTop: 10 }}>
+              {DAY_LETTERS.map((l, i) => (
+                <button
+                  type="button"
+                  key={i}
+                  aria-label={FULL_DAY_NAMES[i]}
+                  className={days.includes(i) ? 'on' : ''}
+                  onClick={() => setDays((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i]))}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+          )}
+          {recType === 'interval' && (
+            <div className="row" style={{ marginTop: 10 }}>
+              <span>Every</span>
+              <input style={{ width: 80 }} type="number" min={1} max={365} value={every} onChange={(e) => setEvery(e.target.value)} />
+              <span>days</span>
+            </div>
+          )}
 
-        <div className="two">
-          <div>
-            <label>Category</label>
-            <select
-              value={adding ? NEW : selectedCategory}
-              onChange={(e) => {
-                if (e.target.value === NEW) {
-                  setAdding(true);
-                } else {
-                  setAdding(false);
-                  setNewName('');
-                  setCategory(e.target.value);
-                }
-              }}
-            >
-              {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-              <option value={NEW}>＋ Add new category…</option>
-            </select>
-            {adding && (
-              <input
-                autoFocus
-                style={{ marginTop: 6 }}
-                value={newName}
-                maxLength={MAX_CATEGORY_LENGTH}
-                placeholder="New category name"
-                onChange={(e) => setNewName(e.target.value)}
+          {recType !== 'once' && (
+            <>
+              <label>If it gets missed</label>
+              <SegControl
+                value={overdueMode}
+                onChange={setOverdueMode}
+                options={[['each', 'Each one counts'], ['catch_up', 'Do it once']]}
               />
+              <div className="muted small" style={{ marginTop: 6 }}>
+                {overdueMode === 'each'
+                  ? 'Every missed day stays on the list. Each one must be done and earns points.'
+                  : 'Doing it once catches up all the missed days. Only that one earns points.'}
+              </div>
+            </>
+          )}
+
+          <div className="two">
+            <div>
+              <label>{recType === 'once' ? 'Date' : 'Starts'}</label>
+              <input type="date" required value={start} onChange={(e) => setStart(e.target.value)} />
+            </div>
+            <div>
+              <label>Time (optional)</label>
+              <input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} />
+            </div>
+          </div>
+          {recType !== 'once' && (
+            <>
+              <label>Ends (optional)</label>
+              <input type="date" value={end} min={start} onChange={(e) => setEnd(e.target.value)} />
+            </>
+          )}
+
+          <div className="check-row">
+            <input id="visible-early" type="checkbox" checked={early} onChange={(e) => setEarly(e.target.checked)} />
+            <label htmlFor="visible-early">Visible before due date?</label>
+          </div>
+          {early && (
+            <div className="row" style={{ marginTop: 10 }}>
+              <span>How long before?</span>
+              <input style={{ width: 80 }} type="number" step={1} min={1} max={MAX_VISIBLE_DAYS} value={earlyDays} onChange={(e) => setEarlyDays(e.target.value)} />
+              <span>days</span>
+            </div>
+          )}
+
+          <div className="two">
+            <div>
+              <label>Category</label>
+              <select
+                value={adding ? NEW : selectedCategory}
+                onChange={(e) => {
+                  if (e.target.value === NEW) {
+                    setAdding(true);
+                  } else {
+                    setAdding(false);
+                    setNewName('');
+                    setCategory(e.target.value);
+                  }
+                }}
+              >
+                {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                <option value={NEW}>＋ Add new category…</option>
+              </select>
+              {adding && (
+                <input
+                  autoFocus
+                  style={{ marginTop: 6 }}
+                  value={newName}
+                  maxLength={MAX_CATEGORY_LENGTH}
+                  placeholder="New category name"
+                  onChange={(e) => setNewName(e.target.value)}
+                />
+              )}
+            </div>
+            <div>
+              <label>Routine</label>
+              <select value={routine} onChange={(e) => setRoutine(e.target.value)}>
+                <option value="">None</option>
+                <option value="morning">Morning routine</option>
+                <option value="evening">Evening routine</option>
+              </select>
+            </div>
+          </div>
+
+          <label>For a pet?</label>
+          <select value={petId} onChange={(e) => setPetId(e.target.value)}>
+            <option value="">Not pet-specific</option>
+            {pets.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+
+          <label>Instructions / notes</label>
+          <textarea value={instructions} maxLength={500} onChange={(e) => setInstructions(e.target.value)} />
+
+          <div className="check-row">
+            <input id="el" type="checkbox" checked={eligible} onChange={(e) => setEligible(e.target.checked)} />
+            <label htmlFor="el">Earns points</label>
+          </div>
+          <div className="check-row">
+            <input id="gv" type="checkbox" checked={guest} onChange={(e) => setGuest(e.target.checked)} />
+            <label htmlFor="gv">Visible to pet sitters</label>
+          </div>
+
+          <FormError error={error} />
+          <div className="row" style={{ marginTop: 18 }}>
+            <button className="btn primary grow" disabled={busy || !title.trim()}>{busy ? 'Saving…' : 'Save'}</button>
+            {live && (
+              <button type="button" className="btn ghost" disabled={busy} title="Doesn't save the edits above" onClick={() => setHiding(true)}>{isHidden(live, hiddenClock) ? 'Hidden…' : 'Hide…'}</button>
+            )}
+            {task && (
+              <button type="button" className="btn danger" disabled={busy} onClick={archive}>Remove</button>
             )}
           </div>
-          <div>
-            <label>Routine</label>
-            <select value={routine} onChange={(e) => setRoutine(e.target.value)}>
-              <option value="">None</option>
-              <option value="morning">Morning routine</option>
-              <option value="evening">Evening routine</option>
-            </select>
-          </div>
-        </div>
-
-        <label>For a pet?</label>
-        <select value={petId} onChange={(e) => setPetId(e.target.value)}>
-          <option value="">Not pet-specific</option>
-          {pets.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-
-        <label>Instructions / notes</label>
-        <textarea value={instructions} maxLength={500} onChange={(e) => setInstructions(e.target.value)} />
-
-        <div className="check-row">
-          <input id="el" type="checkbox" checked={eligible} onChange={(e) => setEligible(e.target.checked)} />
-          <label htmlFor="el">Earns points</label>
-        </div>
-        <div className="check-row">
-          <input id="gv" type="checkbox" checked={guest} onChange={(e) => setGuest(e.target.checked)} />
-          <label htmlFor="gv">Visible to pet sitters</label>
-        </div>
-
-        <FormError error={error} />
-        <div className="row" style={{ marginTop: 18 }}>
-          <button className="btn primary grow" disabled={busy || !title.trim()}>{busy ? 'Saving…' : 'Save'}</button>
-          {task && (
-            <button type="button" className="btn danger" disabled={busy} onClick={archive}>Remove</button>
-          )}
-        </div>
-      </form>
-    </Modal>
+        </form>
+      </Modal>
+      {/* Outside the sheet, so its fixed backdrop isn't clipped or offset by the sheet's styles. */}
+      {hiding && live && <HideTaskModal task={live} onClose={() => setHiding(false)} />}
+    </>
   );
 }

@@ -3,9 +3,11 @@
 import { useMemo, useState } from 'react';
 import { CategoryManager } from '@/components/CategoryManager';
 import { TaskFilterChips, matchesTaskFilter } from '@/components/TaskFilter';
+import { HiddenPill } from '@/components/HiddenPill';
 import { TaskForm } from '@/components/TaskForm';
 import { Avatar } from '@/components/ui';
 import { canonicalCategory } from '@/lib/categories';
+import { isHidden } from '@/lib/hidden';
 import { fmtTime } from '@/lib/dates';
 import { useBlockSitter } from '@/lib/guards';
 import { useHub } from '@/lib/hub';
@@ -15,7 +17,9 @@ import type { Task } from '@/lib/types';
 
 export default function TasksPage() {
   const blocked = useBlockSitter();
-  const { tasks, pets, isAdult, memberById } = useHub();
+  const { tasks: allTasks, pets, isAdult, memberById, hiddenClock } = useHub();
+  // Hidden tasks stay listed for adults (with a pill, to edit or show again); everyone else doesn't see them.
+  const tasks = useMemo(() => (isAdult ? allTasks : allTasks.filter((t) => !isHidden(t, hiddenClock))), [allTasks, isAdult, hiddenClock]);
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
   const [managing, setManaging] = useState(false);
   const [filter, setFilter] = useState<string>('all');
@@ -73,6 +77,7 @@ export default function TasksPage() {
                     {t.due_time && <span>🕒 {fmtTime(t.due_time)}</span>}
                     {pet && <span>🐾 {pet.name}</span>}
                     <span>{a ? a.display_name : 'Anyone'}</span>
+                    <HiddenPill task={t} />
                     {showsEarly(t) && <span className="pill gray">Shows {t.visible_days_before}d early</span>}
                     {t.guest_visible && <span className="pill gray">Sitter-visible</span>}
                   </div>
