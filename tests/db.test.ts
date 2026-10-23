@@ -497,12 +497,23 @@ describe('overdue handling (migration 0006)', () => {
     expect((await admin(`select status from occurrences where id=$1`, [tomorrow.id]))[0].status).toBe('done');
   });
 
-  it('visible_days_before is limited to 1-30 and never set on catch_up tasks', async () => {
+  it("'catch_up' with early visibility: completing today leaves the upcoming row pending", async () => {
+    const t = await newTask(U.alice, 'Catch up early', ', overdue_mode, visible_days_before', `, 'catch_up', 3`);
+    await as(U.alice, `select ensure_occurrences($1, current_date, current_date + 3)`, [A]);
+    const [today] = await admin<{ id: string }>(`select id from occurrences where task_id=$1 and due_date = current_date`, [t]);
+    await as(U.alice, `select complete_occurrence($1, null, current_date)`, [today.id]);
+    expect((await admin(`select status from occurrences where task_id=$1 order by due_date`, [t])).map((x: any) => x.status))
+      .toEqual(['done', 'pending', 'pending', 'pending']);
+  });
+
+  it('visible_days_before is limited to 1-30 and allowed on catch_up tasks', async () => {
     const t = await newTask(U.alice, 'Early visible', ', visible_days_before', ', 5');
     await expect(admin(`update tasks set visible_days_before = 0 where id=$1`, [t])).rejects.toThrow();
     await expect(admin(`update tasks set visible_days_before = 31 where id=$1`, [t])).rejects.toThrow();
-    await expect(admin(`update tasks set overdue_mode = 'catch_up' where id=$1`, [t])).rejects.toThrow();
-    await admin(`update tasks set visible_days_before = null, overdue_mode = 'catch_up' where id=$1`, [t]);
+    await admin(`update tasks set overdue_mode = 'catch_up' where id=$1`, [t]);
+    await expect(admin(`update tasks set visible_days_before = 0 where id=$1`, [t])).rejects.toThrow();
+    await expect(admin(`update tasks set visible_days_before = 31 where id=$1`, [t])).rejects.toThrow();
+    await admin(`update tasks set visible_days_before = 30 where id=$1`, [t]);
   });
 
   it('reset_task_overdue clears days before today without points, keeps today, and survives back-fill', async () => {

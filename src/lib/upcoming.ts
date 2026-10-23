@@ -4,12 +4,11 @@ import type { Occurrence, Task } from './types';
 /** Max "visible before due" lead. Home looks 30 days back + this ahead; ensure_occurrences allows 70 days total. */
 export const MAX_VISIBLE_DAYS = 30;
 
-/** Whether a task's early visibility applies (catch_up tasks only ever show their current day). */
-export const showsEarly = (t: Pick<Task, 'visible_days_before' | 'overdue_mode'>) =>
-  t.visible_days_before != null && t.overdue_mode !== 'catch_up';
+/** Whether a task shows up as "Coming up" ahead of its due date. */
+export const showsEarly = (t: Pick<Task, 'visible_days_before'>) => t.visible_days_before != null;
 
 /** Furthest lookahead any task needs, in days. */
-export const maxLead = (tasks: Pick<Task, 'visible_days_before' | 'overdue_mode' | 'archived'>[]) =>
+export const maxLead = (tasks: Pick<Task, 'visible_days_before' | 'archived'>[]) =>
   Math.min(MAX_VISIBLE_DAYS, Math.max(0, ...tasks.filter((x) => !x.archived && showsEarly(x)).map((x) => x.visible_days_before ?? 0)));
 
 /** Pending future occurrences inside their task's lead window — only the next one per task, soonest first. Tasks already on today's list are skipped. Occurrences on or before `after` (default: today) are left out and don't count as "next". */

@@ -61,13 +61,10 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
     return { type: recType } as Recurrence;
   }
 
-  // catch_up tasks only ever show their current day, so early visibility doesn't apply to them.
-  const canShowEarly = recType === 'once' || overdueMode !== 'catch_up';
-
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (recType === 'weekdays' && days.length === 0) return setError('Pick at least one day.');
-    if (canShowEarly && early && !(Number.isInteger(Number(earlyDays)) && Number(earlyDays) >= 1 && Number(earlyDays) <= MAX_VISIBLE_DAYS))
+    if (early && !(Number.isInteger(Number(earlyDays)) && Number(earlyDays) >= 1 && Number(earlyDays) <= MAX_VISIBLE_DAYS))
       return setError(`"How long before?" must be between 1 and ${MAX_VISIBLE_DAYS} days.`);
     if (recType !== 'once' && end && end < start) return setError('The end date is before the start date.');
     let finalCategory = selectedCategory;
@@ -90,7 +87,7 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
       overdue_mode: recType === 'once' ? 'each' : overdueMode,
       start_date: start,
       end_date: recType === 'once' ? null : end || null,
-      visible_days_before: canShowEarly && early ? Number(earlyDays) : null,
+      visible_days_before: early ? Number(earlyDays) : null,
       guest_visible: guest,
     };
     const ok = await run(async () => {
@@ -193,14 +190,11 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
           </>
         )}
 
-        {canShowEarly && (
-          <div className="check-row">
-            <input id="visible-early" type="checkbox" checked={early} onChange={(e) => setEarly(e.target.checked)} />
-            <label htmlFor="visible-early">Visible before due date?</label>
-          </div>
-        )}
-        {!canShowEarly && <div className="muted small">Early visibility isn’t available for “Do it once” tasks.</div>}
-        {canShowEarly && early && (
+        <div className="check-row">
+          <input id="visible-early" type="checkbox" checked={early} onChange={(e) => setEarly(e.target.checked)} />
+          <label htmlFor="visible-early">Visible before due date?</label>
+        </div>
+        {early && (
           <div className="row" style={{ marginTop: 10 }}>
             <span>How long before?</span>
             <input style={{ width: 80 }} type="number" step={1} min={1} max={MAX_VISIBLE_DAYS} value={earlyDays} onChange={(e) => setEarlyDays(e.target.value)} />

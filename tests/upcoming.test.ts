@@ -18,14 +18,15 @@ describe('upcoming', () => {
     const rows = [occ('2025-01-02', t), occ('2025-01-07', t)];
     expect(upcomingOccs(rows, '2025-01-01', byTime, '2025-01-03').map((r) => r.due_date)).toEqual(['2025-01-07']);
   });
-  it('ignores today, done, catch_up and tasks without a lead', () => {
+  it('ignores today, done and tasks without a lead, but includes catch_up', () => {
     const cu = task({ id: 'c', overdue_mode: 'catch_up' });
     const none = task({ id: 'n', visible_days_before: null });
-    const rows = [occ('2025-01-01'), occ('2025-01-02', task({ id: 'd' }), 'done'), occ('2025-01-02', cu), occ('2025-01-02', none)];
+    const rows = [occ('2025-01-01'), occ('2025-01-02', task({ id: 'd' }), 'done'), occ('2025-01-02', none)];
     expect(upcomingOccs(rows, '2025-01-01', byTime)).toEqual([]);
+    expect(upcomingOccs([occ('2025-01-02', cu)], '2025-01-01', byTime)).toHaveLength(1);
   });
-  it('maxLead ignores catch_up and caps at 30', () => {
-    expect(maxLead([task({ visible_days_before: 5 }), task({ visible_days_before: 20, overdue_mode: 'catch_up' })])).toBe(5);
+  it('maxLead caps at 30', () => {
+    expect(maxLead([task({ visible_days_before: 5 }), task({ visible_days_before: 20, overdue_mode: 'catch_up' })])).toBe(20);
     expect(maxLead([task({ visible_days_before: 99 })])).toBe(30);
     expect(maxLead([task({ visible_days_before: 9, archived: true })])).toBe(0);
     expect(maxLead([])).toBe(0);
