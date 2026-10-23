@@ -26,7 +26,9 @@ export function OccRow({ occ, showDate, missed = 0, canReset }: { occ: OccWithTa
   const overdue = !done && !covered && (occ.due_date < today() || (occ.due_date === today() && !!t.due_time && t.due_time.slice(0, 5) < hhmm(new Date())));
   const assignedToOther = !!t.assignee_member_id && t.assignee_member_id !== me.id;
   const lockedForMe = me.role === 'child' && assignedToOther;
-  const canToggle = !busy && !covered && (done ? isAdult : !lockedForMe);
+  // Upcoming rows are preview-only: finishing a task ahead of its day would farm points.
+  const upcoming = occ.due_date > today();
+  const canToggle = !busy && !covered && (done ? isAdult : !lockedForMe && !upcoming);
 
   /** Adults get a heads-up before completing a task assigned to someone else. */
   function confirmNotMine() {
@@ -77,6 +79,7 @@ export function OccRow({ occ, showDate, missed = 0, canReset }: { occ: OccWithTa
         <button
           className={`check ${done ? 'on' : ''}`}
           disabled={!canToggle}
+          title={upcoming && !done ? 'Not due yet' : undefined}
           aria-label={done ? `Undo ${t.title}` : `Complete ${t.title}`}
           onClick={() => (done ? undo() : confirmNotMine() && complete())}
         >
@@ -112,7 +115,7 @@ export function OccRow({ occ, showDate, missed = 0, canReset }: { occ: OccWithTa
           {serverDone && occ.note && <div className="task-meta">📝 {occ.note}</div>}
         </div>
         {!isSitter && t.points > 0 && t.points_eligible && <span className="pill">+{t.points}</span>}
-        {!done && !covered && (t.guest_visible || isSitter) && (
+        {!done && !covered && !upcoming && (t.guest_visible || isSitter) && (
           <button className="btn small ghost" disabled={busy} onClick={() => confirmNotMine() && setNoteOpen(true)} aria-label="Complete with a note">
             📝
           </button>

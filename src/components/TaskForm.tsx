@@ -6,6 +6,7 @@ import { DAY_LETTERS, FULL_DAY_NAMES, today } from '@/lib/dates';
 import { useHub } from '@/lib/hub';
 import type { Recurrence, Task } from '@/lib/types';
 import { DEFAULT_CATEGORIES, DEFAULT_CATEGORY, PET_CATEGORY, MAX_CATEGORY_LENGTH, canonicalCategory, uniqueCategories } from '@/lib/categories';
+import { MAX_VISIBLE_DAYS } from '@/lib/upcoming';
 import { useSubmit } from '@/lib/useSubmit';
 import { FormError, Modal, SegControl } from './ui';
 
@@ -39,6 +40,8 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
   const [overdueMode, setOverdueMode] = useState<Task['overdue_mode']>(task?.overdue_mode ?? 'each');
   const [start, setStart] = useState(task?.start_date ?? today());
   const [end, setEnd] = useState(task?.end_date ?? '');
+  const [early, setEarly] = useState(task?.visible_days_before != null);
+  const [earlyDays, setEarlyDays] = useState(String(task?.visible_days_before ?? 3));
   const [guest, setGuest] = useState(task?.guest_visible ?? !!presetPetId);
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
@@ -58,9 +61,14 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
     return { type: recType } as Recurrence;
   }
 
+  // catch_up tasks only ever show their current day, so early visibility doesn't apply to them.
+  const canShowEarly = recType === 'once' || overdueMode !== 'catch_up';
+
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (recType === 'weekdays' && days.length === 0) return setError('Pick at least one day.');
+    if (canShowEarly && early && !(Number.isInteger(Number(earlyDays)) && Number(earlyDays) >= 1 && Number(earlyDays) <= MAX_VISIBLE_DAYS))
+      return setError(`"How long before?" must be between 1 and ${MAX_VISIBLE_DAYS} days.`);
     if (recType !== 'once' && end && end < start) return setError('The end date is before the start date.');
     let finalCategory = selectedCategory;
     if (adding) {
@@ -82,6 +90,7 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
       overdue_mode: recType === 'once' ? 'each' : overdueMode,
       start_date: start,
       end_date: recType === 'once' ? null : end || null,
+      visible_days_before: canShowEarly && early ? Number(earlyDays) : null,
       guest_visible: guest,
     };
     const ok = await run(async () => {
@@ -182,6 +191,21 @@ export function TaskForm({ task, presetPetId, onClose }: { task?: Task; presetPe
             <label>Ends (optional)</label>
             <input type="date" value={end} min={start} onChange={(e) => setEnd(e.target.value)} />
           </>
+        )}
+
+        {canShowEarly && (
+          <div className="check-row">
+            <input id="visible-early" type="checkbox" checked={early} onChange={(e) => setEarly(e.target.checked)} />
+            <label htmlFor="visible-early">Visible before due date?</label>
+          </div>
+        )}
+        {!canShowEarly && <div className="muted small">Early visibility isn’t available for “Do it once” tasks.</div>}
+        {canShowEarly && early && (
+          <div className="row" style={{ marginTop: 10 }}>
+            <span>How long before?</span>
+            <input style={{ width: 80 }} type="number" step={1} min={1} max={MAX_VISIBLE_DAYS} value={earlyDays} onChange={(e) => setEarlyDays(e.target.value)} />
+            <span>days</span>
+          </div>
         )}
 
         <div className="two">

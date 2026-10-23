@@ -8,6 +8,8 @@ import { Avatar } from '@/components/ui';
 import { addDays, fmtDate, fmtDateTime, greeting, tsToDate, today } from '@/lib/dates';
 import { useHub } from '@/lib/hub';
 import { byOccTime, useOccurrences } from '@/lib/occurrences';
+import { doneOn, maxLead, upcomingOccs } from '@/lib/upcoming';
+import { UpcomingSection } from '@/components/UpcomingSection';
 
 export default function Home() {
   const { isSitter } = useHub();
@@ -15,20 +17,24 @@ export default function Home() {
 }
 
 function FamilyHome() {
-  const { me, household, members, events, rewards, balances, redemptions, isAdult } = useHub();
+  const { me, household, members, events, rewards, balances, redemptions, isAdult, tasks } = useHub();
   const t = today();
-  const { rows: allRows, loading } = useOccurrences(addDays(t, -30), t);
+  // Look ahead far enough to catch tasks that are visible before their due date (capped, see MAX_VISIBLE_DAYS).
+  const lead = useMemo(() => maxLead(tasks), [tasks]);
+  const { rows: allRows, loading } = useOccurrences(addDays(t, -30), addDays(t, lead));
   const [filter, setFilter] = useState('all');
   const rows = useMemo(() => allRows.filter((r) => matchesTaskFilter(r.task, filter)), [allRows, filter]);
 
-  const { overdue, morning, evening, other, done } = useMemo(() => {
+  const { overdue, upcoming, morning, evening, other, done } = useMemo(() => {
     const todays = rows.filter((r) => r.due_date === t);
     return {
+      upcoming: upcomingOccs(rows, t, byOccTime),
       overdue: rows.filter((r) => r.due_date < t && r.status === 'pending').sort((a, b) => a.due_date.localeCompare(b.due_date)),
       morning: todays.filter((r) => r.task.routine === 'morning' && r.status === 'pending').sort(byOccTime),
       evening: todays.filter((r) => r.task.routine === 'evening' && r.status === 'pending').sort(byOccTime),
       other: todays.filter((r) => !r.task.routine && r.status === 'pending').sort(byOccTime),
-      done: todays.filter((r) => r.status === 'done').sort(byOccTime),
+      // Listed on the day it was actually completed, not the day it was due.
+      done: rows.filter((r) => r.status === 'done' && doneOn(r) === t).sort(byOccTime),
     };
   }, [rows, t]);
 
@@ -120,6 +126,8 @@ function FamilyHome() {
       {other.map((o) => <OccRow key={o.id} occ={o} />)}
       {evening.length > 0 && (<><div className="section-title"><h2>🌙 Evening routine</h2></div>{evening.map((o) => <OccRow key={o.id} occ={o} />)}</>)}
 
+      <UpcomingSection rows={upcoming} />
+
       {done.length > 0 && (<><div className="section-title"><h2>Done today 🎉</h2></div>{done.map((o) => <OccRow key={o.id} occ={o} />)}</>)}
 
       {nextFamily && (
@@ -142,10 +150,14 @@ function FamilyHome() {
 }
 
 function SitterHome() {
-  const { me, household, pets } = useHub();
+  const { me, household, pets, tasks } = useHub();
   const t = today();
-  const { rows, loading } = useOccurrences(t, addDays(t, 2));
+  const lead = useMemo(() => maxLead(tasks), [tasks]);
+  const { rows, loading } = useOccurrences(t, addDays(t, Math.max(2, lead)));
   const days = [t, addDays(t, 1), addDays(t, 2)];
+  // Days already listed below are not repeated under "Coming up".
+  const lastListed = days[2];
+  const upcoming = useMemo(() => upcomingOccs(rows, t, byOccTime, lastListed), [rows, t, lastListed]);
 
   return (
     <>
@@ -179,6 +191,7 @@ function SitterHome() {
           </div>
         );
       })}
+      <UpcomingSection rows={upcoming} />
       <p className="muted small" style={{ textAlign: 'center' }}>
         Tap 📝 on a task to add a note, like “ate everything”.
       </p>

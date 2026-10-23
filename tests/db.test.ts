@@ -469,14 +469,40 @@ describe('overdue handling (migration 0006)', () => {
     expect(await statuses()).toEqual(['covered', 'covered', 'done', 'covered']);
   });
 
-  it("'catch_up' completing a future-dated occurrence settles everything pending up to it", async () => {
+  it("'catch_up' completing a next-day occurrence (caller's date ahead of UTC) settles everything pending up to it", async () => {
     const t = await newTask(U.alice, 'Catch up future', ', overdue_mode', `, 'catch_up'`);
     await admin(`update tasks set start_date = current_date - 1 where id=$1`, [t]);
-    await as(U.alice, `select ensure_occurrences($1, current_date - 1, current_date + 2)`, [A]);
-    const [future] = await admin<{ id: string }>(`select id from occurrences where task_id=$1 and due_date = current_date + 2`, [t]);
-    await as(U.alice, `select complete_occurrence($1)`, [future.id]);
+    await as(U.alice, `select ensure_occurrences($1, current_date - 1, current_date + 1)`, [A]);
+    const [future] = await admin<{ id: string }>(`select id from occurrences where task_id=$1 and due_date = current_date + 1`, [t]);
+    await as(U.alice, `select complete_occurrence($1, null, current_date + 1)`, [future.id]);
     expect((await admin(`select status from occurrences where task_id=$1 order by due_date`, [t])).map((x: any) => x.status))
-      .toEqual(['covered', 'covered', 'covered', 'done']);
+      .toEqual(['covered', 'covered', 'done']);
+  });
+
+  it('refuses to complete occurrences dated after the caller’s today (no farming points ahead of time)', async () => {
+    const t = await newTask(U.alice, 'Early bird');
+    await as(U.alice, `select ensure_occurrences($1, current_date, current_date + 5)`, [A]);
+    const [soon] = await admin<{ id: string }>(`select id from occurrences where task_id=$1 and due_date = current_date + 2`, [t]);
+    const before = await balance(mAlice);
+    await fails(U.alice, `select complete_occurrence($1)`, [soon.id]);
+    await fails(U.alice, `select complete_occurrence($1, null, current_date + 30)`, [soon.id]); // p_today is clamped
+    expect(await balance(mAlice)).toBe(before);
+  });
+
+  it('allows completing a next-day occurrence when the caller’s today is that day (timezone slack)', async () => {
+    const t = await newTask(U.alice, 'Early tz');
+    await as(U.alice, `select ensure_occurrences($1, current_date, current_date + 2)`, [A]);
+    const [tomorrow] = await admin<{ id: string }>(`select id from occurrences where task_id=$1 and due_date = current_date + 1`, [t]);
+    await as(U.alice, `select complete_occurrence($1, null, current_date + 1)`, [tomorrow.id]);
+    expect((await admin(`select status from occurrences where id=$1`, [tomorrow.id]))[0].status).toBe('done');
+  });
+
+  it('visible_days_before is limited to 1-30 and never set on catch_up tasks', async () => {
+    const t = await newTask(U.alice, 'Early visible', ', visible_days_before', ', 5');
+    await expect(admin(`update tasks set visible_days_before = 0 where id=$1`, [t])).rejects.toThrow();
+    await expect(admin(`update tasks set visible_days_before = 31 where id=$1`, [t])).rejects.toThrow();
+    await expect(admin(`update tasks set overdue_mode = 'catch_up' where id=$1`, [t])).rejects.toThrow();
+    await admin(`update tasks set visible_days_before = null, overdue_mode = 'catch_up' where id=$1`, [t]);
   });
 
   it('reset_task_overdue clears days before today without points, keeps today, and survives back-fill', async () => {

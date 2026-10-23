@@ -50,6 +50,8 @@ export type Task = {
   overdue_mode: 'each' | 'catch_up';
   start_date: string;
   end_date: string | null;
+  /** Days before the due date that an occurrence starts showing as "Coming up"; null = only on its due date. 1–30; ignored for catch_up tasks. */
+  visible_days_before: number | null;
   guest_visible: boolean;
   archived: boolean;
   /** Set by "Clear overdue": days up to here are never re-created. */

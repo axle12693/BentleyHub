@@ -10,6 +10,7 @@ import { fmtTime } from '@/lib/dates';
 import { useBlockSitter } from '@/lib/guards';
 import { useHub } from '@/lib/hub';
 import { describeRecurrence } from '@/lib/recurrence';
+import { showsEarly } from '@/lib/upcoming';
 import type { Task } from '@/lib/types';
 
 export default function TasksPage() {
@@ -72,6 +73,7 @@ export default function TasksPage() {
                     {t.due_time && <span>🕒 {fmtTime(t.due_time)}</span>}
                     {pet && <span>🐾 {pet.name}</span>}
                     <span>{a ? a.display_name : 'Anyone'}</span>
+                    {showsEarly(t) && <span className="pill gray">Shows {t.visible_days_before}d early</span>}
                     {t.guest_visible && <span className="pill gray">Sitter-visible</span>}
                   </div>
                 </div>

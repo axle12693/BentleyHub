@@ -17,7 +17,8 @@ export function useOccurrences(from: string, to: string) {
   const [raw, setRaw] = useState<Occurrence[]>([]);
   const [loadedKey, setLoadedKey] = useState('');
   const [error, setError] = useState('');
-  const key = `${household.id}|${from}|${to}`;
+  // Extending only the end of the range (e.g. a task gained early visibility) refetches in place instead of showing a spinner.
+  const loadKey = `${household.id}|${from}`;
 
   useEffect(() => {
     let live = true;
@@ -33,11 +34,11 @@ export function useOccurrences(from: string, to: string) {
       } catch (e) {
         if (live) setError(errMsg(e));
       } finally {
-        if (live) setLoadedKey(key);
+        if (live) setLoadedKey(loadKey);
       }
     })();
     return () => { live = false; };
-  }, [household.id, from, to, rev, key]);
+  }, [household.id, from, to, rev, loadKey]);
 
   // Joining with tasks is separate from fetching, so editing a task never re-queries occurrences.
   const rows = useMemo<OccWithTask[]>(() => {
@@ -49,5 +50,5 @@ export function useOccurrences(from: string, to: string) {
   }, [raw, tasks]);
 
   // "Loading" only when the range or household changed — not on every realtime refresh.
-  return { rows, loading: loadedKey !== key, error };
+  return { rows, loading: loadedKey !== loadKey, error };
 }
