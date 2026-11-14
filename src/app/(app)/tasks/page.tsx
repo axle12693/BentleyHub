@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { CategoryManager } from '@/components/CategoryManager';
-import { TaskFilterChips, matchesTaskFilter } from '@/components/TaskFilter';
+import { CategoryFilterChips, TaskFilterChips, matchesCategory, matchesTaskFilter } from '@/components/TaskFilter';
 import { HiddenPill } from '@/components/HiddenPill';
 import { TaskForm } from '@/components/TaskForm';
 import { Avatar } from '@/components/ui';
@@ -23,10 +23,11 @@ export default function TasksPage() {
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
   const [managing, setManaging] = useState(false);
   const [filter, setFilter] = useState<string>('all');
+  const [category, setCategory] = useState('all');
 
   const filtered = useMemo(
-    () => tasks.filter((t) => matchesTaskFilter(t, filter)),
-    [tasks, filter],
+    () => tasks.filter((t) => matchesTaskFilter(t, filter) && matchesCategory(t, category)),
+    [tasks, filter, category],
   );
   const groups = useMemo(() => {
     const g = new Map<string, Task[]>();
@@ -47,6 +48,7 @@ export default function TasksPage() {
         {isAdult && tasks.length > 0 && <button className="btn ghost small" onClick={() => setManaging(true)}>Categories</button>}
       </div>
       <TaskFilterChips value={filter} onChange={setFilter} />
+      <CategoryFilterChips value={category} onChange={setCategory} />
 
       {tasks.length === 0 && (
         <div className="card empty">

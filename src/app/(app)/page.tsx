@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { OccRow } from '@/components/OccRow';
-import { TaskFilterChips, matchesTaskFilter } from '@/components/TaskFilter';
+import { CategoryFilterChips, TaskFilterChips, matchesCategory, matchesTaskFilter } from '@/components/TaskFilter';
 import { Avatar } from '@/components/ui';
 import { addDays, fmtDate, fmtDateTime, greeting, tsToDate, today } from '@/lib/dates';
 import { useHub } from '@/lib/hub';
@@ -23,7 +23,8 @@ function FamilyHome() {
   const lead = useMemo(() => maxLead(tasks, hiddenClock), [tasks, hiddenClock]);
   const { rows: allRows, loading } = useOccurrences(addDays(t, -30), addDays(t, lead));
   const [filter, setFilter] = useState('all');
-  const rows = useMemo(() => allRows.filter((r) => matchesTaskFilter(r.task, filter)), [allRows, filter]);
+  const [category, setCategory] = useState('all');
+  const rows = useMemo(() => allRows.filter((r) => matchesTaskFilter(r.task, filter) && matchesCategory(r.task, category)), [allRows, filter, category]);
 
   const { overdue, upcoming, morning, evening, other, done } = useMemo(() => {
     const todays = rows.filter((r) => r.due_date === t);
@@ -105,6 +106,7 @@ function FamilyHome() {
       )}
 
       <TaskFilterChips value={filter} onChange={setFilter} />
+      <CategoryFilterChips value={category} onChange={setCategory} />
 
       {overdueGroups.length > 0 && (
         <>
